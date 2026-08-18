@@ -98,7 +98,11 @@ Write-Host "Releasing $current -> $target" -ForegroundColor Cyan
 # instead of a half-applied version bump with no tag.
 $changelogPath = Join-Path $ProjectRoot 'CHANGELOG.md'
 Write-Host 'Generating CHANGELOG from commits...' -ForegroundColor Cyan
-$hasTags = git -C $ProjectRoot tag -l 2>$null
+# Version tags only. `release nightly` moves the rolling `dev` tag to the tip
+# on every publish, so an unfiltered listing reports "already released" on a
+# repo that has only ever shipped dev builds, and the generator below then
+# diffs an empty `dev..HEAD`.
+$hasTags = git -C $ProjectRoot tag -l 'v[0-9]*' 2>$null
 if (-not $hasTags) {
     if (-not (Test-Path $changelogPath)) {
         $date = Get-Date -Format 'yyyy-MM-dd'
