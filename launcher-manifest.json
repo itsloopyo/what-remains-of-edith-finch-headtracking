@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "mod_info": {
+    "name": "EdithFinchHeadTracking",
+    "version": "0.0.0",
+    "game_id": "edith-finch"
+  },
+  "strategy": "AsiLoader",
+  "delivery_mode": "install_cmd",
+
+  "loader": {
+    "detect": ["FinchGame/Binaries/Win64/winmm.dll"],
+    "seed": []
+  },
+
+  "files": [
+    {
+      "source": "plugins/EdithFinchHeadTracking.asi",
+      "target": "FinchGame/Binaries/Win64/EdithFinchHeadTracking.asi"
+    }
+  ],
+
+  "runtime_requirements": [],
+  "dependencies": []
+}

@@ -1,0 +1,45 @@
+# Changelog
+
+## [Unreleased]
+
+### Added
+
+- Added 6DOF head tracking for What Remains of Edith Finch (UE4), built as an
+  Ultimate ASI Loader plugin that hooks the player view point in the render
+  path only, so look and aim stay decoupled.
+- Added an OpenTrack UDP receiver (port 4242) with per-axis sensitivity,
+  inversion and smoothing, and a 6DOF position offset applied in the clean
+  camera basis.
+- Added nav-cluster hotkeys (Home/End/PageUp/PageDown) plus Ctrl+Shift+T/Y/G/H
+  chord alternatives.
+- Added a PE-fingerprint build profile failsafe: the mod stays dormant on any
+  build it does not recognise, so the game always runs vanilla on an unknown
+  patch.
+- Added `[View] FovOffset`, a field-of-view control for a game that ships none.
+  The render-path caller hands the view point out of a single
+  FMinimalViewInfo, so the hook reads the FOV the frame is about to be built
+  with and can widen it in place. The offset is added to whatever the current
+  camera asks for, so an authored framing keeps its shape; measured 105 degrees
+  rendered from the game's 80 at `FovOffset=25`. Game logic never sees the
+  change, and the log reports the game's own value and any change to it.
+
+### Changed
+
+- Changed head tracking to hold still on views pinned straight down. Lewis'
+  cannery chapter parks the player camera on the daydream's top-down 2D map
+  while the cannery fills the screen, and Barbara's comic chapter parks it
+  above the open comic book. In both, the view the player is actually watching
+  is drawn outside the player-camera path, so driving the pinned camera only
+  swung the map or the book about. Tracking resumes on its own once the game
+  hands back a camera with a horizon.
+- Changed smoothing to two keys in `[Rotation]`: `LocalSmoothing` (default 0.0)
+  for a tracker running on this machine and `RemoteSmoothing` (default 0.15)
+  for a remote device on the network, selected per connection from the packet
+  source address.
+
+### Removed
+
+- Removed `[Rotation] Smoothing` and `[Position] Smoothing`; rotation and
+  position both use the new smoothing pair.
+- Removed the hidden 0.15 baseline smoothing floor, so a local tracker gets
+  zero-latency tracking by default.
