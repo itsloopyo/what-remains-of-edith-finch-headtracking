@@ -1,8 +1,8 @@
 # What Remains of Edith Finch Head Tracking
 
-6DOF head tracking for What Remains of Edith Finch: your head moves the camera while the mouse or controller still drives look and interaction, with no VR headset required.
+![Mod GIF](https://raw.githubusercontent.com/itsloopyo/what-remains-of-edith-finch-headtracking/main/assets/readme-clip.gif)
 
-<!-- ![Mod GIF](https://raw.githubusercontent.com/itsloopyo/what-remains-of-edith-finch-headtracking/main/assets/readme-clip.gif) -->
+6DOF head tracking for What Remains of Edith Finch: your head moves the camera while the mouse or controller still drives look and interaction, no VR headset required.
 
 ## Features
 
