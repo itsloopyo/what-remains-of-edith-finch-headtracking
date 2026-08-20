@@ -375,8 +375,26 @@ bool InstallViewPointHook() {
 }
 
 DWORD WINAPI BootstrapThread(LPVOID) {
-    Log::Open(ExeDirectory() + L"\\HeadTracking.log");
+    const std::wstring logPath = ExeDirectory() + L"\\HeadTracking.log";
+    // Keep one previous generation. The crash handler asks the user to send this
+    // log, and they relaunch the game before going to look for it, which would
+    // otherwise truncate away the session being reported.
+    DWORD rotateError = 0;
+    // Named, not temporaries in the condition: they are destroyed at the end of
+    // the if-condition, so the deallocation runs before GetLastError() below.
+    const std::wstring prevPath = ExeDirectory() + L"\\HeadTracking.prev.log";
+    if (!MoveFileExW(logPath.c_str(), prevPath.c_str(),
+                     MOVEFILE_REPLACE_EXISTING)) {
+        rotateError = GetLastError();
+    }
+    Log::Open(logPath);
     Log::Line("=== What Remains of Edith Finch Head Tracking (UE4) ===");
+    // Open truncates, so a failed rotation has already destroyed the generation
+    // the rotation existed to keep. A missing source is the first-run case.
+    if (rotateError != 0 && rotateError != ERROR_FILE_NOT_FOUND) {
+        Log::Line("Could not rotate the previous log (error %lu) - the previous session log was overwritten",
+                  rotateError);
+    }
     cameraunlock::diagnostics::InstallCrashHandler();
 
     LoadAndLogConfig();
@@ -393,8 +411,8 @@ DWORD WINAPI BootstrapThread(LPVOID) {
     if (!InstallViewPointHook()) return 0;
 
     g_hotkeys = StartHotkeys(*g_session, g_config.yaw_mode_key);
-    Log::Line("init complete. Home=recenter End=toggle PageUp=cycle tracking mode "
-              "PageDown=yawmode (chords Ctrl+Shift+T/Y/G/H). Waiting for OpenTrack on UDP %d.",
+    Log::Line("init complete. End=toggle PageUp=cycle tracking mode "
+              "PageDown=yawmode (chords Ctrl+Shift+Y/G/H). Waiting for OpenTrack on UDP %d.",
         g_config.udp_port);
     return 0;
 }

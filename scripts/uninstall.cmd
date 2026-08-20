@@ -27,7 +27,7 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=edith-finch"
 set "MOD_DISPLAY_NAME=What Remains of Edith Finch Head Tracking"
-set "MOD_DLLS=EdithFinchHeadTracking.asi HeadTracking.ini"
+set "MOD_DLLS=EdithFinchHeadTracking.asi HeadTracking.ini HeadTracking.log HeadTracking.prev.log"
 set "MOD_INTERNAL_NAME=EdithFinchHeadTracking"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"

@@ -58,7 +58,7 @@ In OpenTrack, set **Output** to **UDP over network**, address `127.0.0.1`, port 
 
 1. In OpenTrack, set **Input** to **neuralnet tracker**, which tracks your face from a plain webcam with no markers.
 2. Set **Output** to UDP on `127.0.0.1:4242`.
-3. Sit at your normal playing distance and press Home in-game to recenter.
+3. Sit at your normal playing distance and centre the tracker with OpenTrack's Center bind.
 
 ### Phone App Setup
 
@@ -75,10 +75,11 @@ Two equivalent binding sets. Use whichever your keyboard has; the chords exist f
 
 | Action                        | Nav-cluster | Chord          |
 |-------------------------------|-------------|----------------|
-| Recenter                      | `Home`      | `Ctrl+Shift+T` |
 | Toggle tracking               | `End`       | `Ctrl+Shift+Y` |
 | Cycle tracking mode           | `Page Up`   | `Ctrl+Shift+G` |
 | Toggle yaw mode (world/local) | `Page Down` | `Ctrl+Shift+H` |
+
+There is no recenter key. The mod applies the pose your tracker sends as-is, so centre it in the tracker app: OpenTrack's Center bind, or the CENTER button in Headcam.
 
 Cycling the tracking mode steps through: normal head tracking, rotation only, position only, and back to normal.
 
@@ -141,14 +142,14 @@ LimitZBack=0.10
 **Mod not loading**
 
 - Confirm `winmm.dll` and `EdithFinchHeadTracking.asi` are both in `<game>\FinchGame\Binaries\Win64\`.
-- Check `HeadTracking.log` in that folder. No log file at all means the ASI loader is not being loaded.
+- Check `HeadTracking.log` in that folder. No log file at all means the ASI loader is not being loaded. The log is rewritten on every launch and the launch before it is kept as `HeadTracking.prev.log`, so if the game crashed and you relaunched before fetching it, send the `.prev.log` too.
 - "Staying dormant" in the log means the game build did not match a known profile. File an issue with the log attached.
 
 **No tracking response**
 
 - Confirm your tracker is sending UDP to `127.0.0.1:4242` (or your PC's LAN IP for a phone app).
 - "Failed to bind UDP port 4242" in the log means another program already holds the port, usually a game left running. Close it; the mod picks the port up within about half a second and logs "tracking is live". No restart needed.
-- Press `Home` (or `Ctrl+Shift+T`) to recenter, and check tracking is not toggled off with `End`.
+- Check tracking is not toggled off with `End`. If the view is off-centre, centre it in your tracker app rather than in the game.
 
 **Jittery or unstable tracking**
 

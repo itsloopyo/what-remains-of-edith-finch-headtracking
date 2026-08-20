@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Removed recentring from the mod. The `Home` / `Ctrl+Shift+T` hotkey is gone and
+  the tracker pose is applied as sent. Every tracker app centres itself, so a
+  mod-side centre sat in series with the tracker's own and the two drifted apart.
+  Centre in your tracker app instead: OpenTrack's Center bind, or the CENTER
+  button in Headcam.
+
+### Added
+
+- Added a single previous log generation: the launch before the current one is
+  kept as `HeadTracking.prev.log`. The crash handler asks the user to send the
+  log, and relaunching to go find it used to truncate away the crash being
+  reported.
+
 ## [1.0.0] - 2026-08-18
 
 ### Added

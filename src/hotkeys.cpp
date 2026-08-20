@@ -14,10 +14,8 @@ namespace finch_ht
         using cameraunlock::input::ChordGuarded;
         using cameraunlock::input::NavGuarded;
 
-        constexpr int kVkHome   = 0x24;
         constexpr int kVkEnd    = 0x23;
         constexpr int kVkPageUp = 0x21;
-        constexpr int kVkT = 0x54;
         constexpr int kVkY = 0x59;
         constexpr int kVkG = 0x47;
         constexpr int kVkH = 0x48;
@@ -25,12 +23,6 @@ namespace finch_ht
         constexpr int kVkJ = 0x4A;
 
         constexpr int kPollIntervalMs = 16;
-
-        void Recenter(Session& session)
-        {
-            session.Recenter();
-            Log::Line("hotkey: recenter");
-        }
 
         void ToggleTracking()
         {
@@ -74,13 +66,11 @@ namespace finch_ht
 
         // Nav-cluster (AGENTS.md default bindings). Suppressed while Ctrl+Shift is
         // held so the chord path is the sole trigger for a Ctrl+Shift+<nav> press.
-        poller->AddHotkey(kVkHome,   NavGuarded([&session] { Recenter(session); }));
         poller->AddHotkey(kVkEnd,    NavGuarded([] { ToggleTracking(); }));
         poller->AddHotkey(kVkPageUp, NavGuarded([&session] { CycleTrackingMode(session); }));
         poller->AddHotkey(yawModeKey, NavGuarded([] { ToggleYawMode(); }));
 
-        // Ctrl+Shift chord alternatives (T/Y/G/H cluster).
-        poller->AddHotkey(kVkT, ChordGuarded([&session] { Recenter(session); }));
+        // Ctrl+Shift chord alternatives (Y/G/H cluster).
         poller->AddHotkey(kVkY, ChordGuarded([] { ToggleTracking(); }));
         poller->AddHotkey(kVkG, ChordGuarded([&session] { CycleTrackingMode(session); }));
         poller->AddHotkey(kVkH, ChordGuarded([] { ToggleYawMode(); }));

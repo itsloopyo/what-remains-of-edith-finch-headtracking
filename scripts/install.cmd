@@ -24,7 +24,7 @@ set "MOD_VERSION=1.0.0"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
 set "ASI_LOADER_NAME=winmm.dll"
-set "MOD_CONTROLS=Controls: Home = recenter, End = toggle, PageUp = cycle tracking mode, PageDown = yaw mode (chords: Ctrl+Shift+T/Y/G/H)."
+set "MOD_CONTROLS=Controls: End = toggle, PageUp = cycle tracking mode, PageDown = yaw mode (chords: Ctrl+Shift+Y/G/H)."
 :: ASI_LOADER_NAME is the filename the ASI DLL is renamed to. The shipping exe
 :: statically imports winmm.dll, so the loader proxies it (dwmapi.dll is taken
 :: by an existing UE4SS install in this game).
