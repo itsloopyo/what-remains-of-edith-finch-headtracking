@@ -1,6 +1,6 @@
 [workspace]
 name = "what-remains-of-edith-finch-headtracking"
-version = "1.0.0"
+version = "1.1.0"
 description = "Head tracking mod for What Remains of Edith Finch (UE4)"
 license = "MIT"
 license-file = "LICENSE"

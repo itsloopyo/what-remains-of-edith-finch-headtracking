@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0] - 2026-08-20
+
+### Added
+
+- drop mod-side recentring, keep one previous log generation
+
 ## [Unreleased]
 
 ### Changed
