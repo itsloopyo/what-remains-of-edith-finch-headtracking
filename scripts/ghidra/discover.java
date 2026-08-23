@@ -1,5 +1,6 @@
 // FinchGame.exe (UE4, Shipping) RVA discovery for
-// APlayerController::GetPlayerViewPoint. Java port of LNEE's discover.py
+// APlayerController::GetPlayerViewPoint. Java port of our own
+// little-nightmares-enhanced-edition-headtracking scripts/ghidra/discover.py
 // (Ghidra 12 dropped Jython). Shipping strips the checkf ASCII strings, so GPV
 // cannot be found by its own string. What survives is the reflection metadata:
 // the FName "GetPlayerViewPoint" used when the engine registers the UFunction.

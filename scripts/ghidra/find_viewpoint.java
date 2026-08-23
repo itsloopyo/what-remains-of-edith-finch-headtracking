@@ -24,7 +24,7 @@ public class find_viewpoint extends GhidraScript {
         fm = currentProgram.getFunctionManager();
         refs = currentProgram.getReferenceManager();
 
-        String outPath = "C:\\Data\\repos\\itsloopyo\\the-vanishing-of-ethan-carter-redux-headtracking\\.lab\\ghidra\\viewpoint.txt";
+        String outPath = "C:\\Data\\repos\\itsloopyo\\what-remains-of-edith-finch-headtracking\\.lab\\ghidra\\viewpoint.txt";
         PrintWriter f = new PrintWriter(outPath);
 
         String[] FMOVE = {"MOVSS", "MOVSD", "MOVUPS", "MOVAPS", "MOVLPS", "MOVHPS", "MOVQ", "MOVLPD"};

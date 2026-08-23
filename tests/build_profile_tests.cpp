@@ -37,8 +37,8 @@ int RunBuildProfileTests()
     Check(failures, offsets.kGetPlayerViewPointRva != 0,
           "the profile is complete, so the mod activates rather than staying dormant");
 
-    Check(failures, offsets.kGetPlayerViewPointPrologue[0] != 0,
-          "the decrypted prologue is pinned, so the SteamStub wait has something to match");
+    Check(failures, offsets.kGetPlayerViewPointPrologueHash != 0,
+          "the decrypted prologue hash is pinned, so the SteamStub wait has something to match");
 
     Check(failures, offsets.kDefaultInjectMode >= finch_ht::kInjectModeFirstCaller
                  && offsets.kDefaultInjectMode <= finch_ht::kInjectModeLastCaller,

@@ -45,10 +45,10 @@ void FormatChainTests(int& failures)
 
 void HexBytesTests(int& failures)
 {
-    const std::uint8_t prologue[] = {0x48, 0x89, 0x5C, 0x24, 0x10};
-    Check(failures, finch_ht::HexBytes(prologue, sizeof(prologue)) == "48 89 5C 24 10 ",
+    const std::uint8_t sample[] = {0xDE, 0xAD, 0xBE, 0xEF, 0x42};
+    Check(failures, finch_ht::HexBytes(sample, sizeof(sample)) == "DE AD BE EF 42 ",
           "bytes render uppercase, space separated, with a trailing space");
-    Check(failures, finch_ht::HexBytes(prologue, 0) == "",
+    Check(failures, finch_ht::HexBytes(sample, 0) == "",
           "an empty range renders as nothing");
 
     const std::uint8_t edges[] = {0x00, 0x0F, 0xF0, 0xFF};

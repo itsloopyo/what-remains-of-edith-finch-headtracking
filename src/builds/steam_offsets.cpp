@@ -30,13 +30,12 @@ namespace finch_ht::builds
             // FRotator4f), else tail-falls to Super::GetPlayerViewPoint
             // (0x00ff2410). Signature (self, FVector* OutLoc, FRotator* OutRot).
             /* kGetPlayerViewPointRva */ 0x01112680ULL,
-            // Decrypted prologue: mov [rsp+10],rbx / mov [rsp+18],rsi /
-            // mov [rsp+20],rdi / push rbp / mov rbp,rsp. Read out of the
-            // pe-sieve dump of the running (post-SteamStub) module.
-            /* kGetPlayerViewPointPrologue */ {{
-                0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74,
-                0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x55,
-            }},
+            // FNV-1a 64 of the first kPrologueBytes bytes of the function once
+            // SteamStub has decrypted it, measured on the running module. It is
+            // a completion sentinel only: the RVA above is what locates the
+            // function, and a digest cannot reconstruct the bytes it was taken
+            // from, so no instruction stream of the game is kept here.
+            /* kGetPlayerViewPointPrologueHash */ 0xA4E5BECDF1756227ULL,
             // GetPlayerViewPoint call sites, captured at runtime with inject
             // mode 0 (which logs every call CHAIN plus counts). Slot [0] is the
             // render path; the rest are kept so a single in-game session can

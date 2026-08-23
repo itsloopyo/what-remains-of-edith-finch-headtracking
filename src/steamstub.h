@@ -26,9 +26,14 @@ namespace finch_ht
     // otherwise faults the bootstrap thread and kills the game.
     bool RangeIsReadable(const void* address, std::size_t bytes);
 
-    // Blocks until the target is both decrypted (expectedPrologue present) and
-    // executable again, logging what it saw either way. False = gave up; the
-    // caller must then stay dormant. profileName appears in the failure log.
-    bool WaitForDecryptedTarget(const void* target, const PrologueBytes& expectedPrologue,
+    // FNV-1a 64 over `count` bytes, the hash the build profile pins its
+    // decrypted-prologue sentinel as.
+    std::uint64_t HashBytes(const std::uint8_t* bytes, std::size_t count);
+
+    // Blocks until the target is both decrypted (its first kPrologueBytes bytes
+    // hash to expectedPrologueHash) and executable again, logging what it saw
+    // either way. False = gave up; the caller must then stay dormant.
+    // profileName appears in the failure log.
+    bool WaitForDecryptedTarget(const void* target, std::uint64_t expectedPrologueHash,
                                 const char* profileName);
 }

@@ -36,10 +36,9 @@ namespace finch_ht
     inline constexpr std::size_t kMaxKnownCallers = 16;
     using CallerRvaTable = std::array<std::uintptr_t, kMaxKnownCallers>;
 
-    // Bytes compared against the hook target to prove SteamStub has decrypted
-    // it - see kGetPlayerViewPointPrologue below.
+    // How many bytes at the hook target are hashed to prove SteamStub has
+    // finished decrypting it - see kGetPlayerViewPointPrologueHash below.
     inline constexpr std::size_t kPrologueBytes = 16;
-    using PrologueBytes = std::array<std::uint8_t, kPrologueBytes>;
 
     struct OffsetTable
     {
@@ -47,13 +46,18 @@ namespace finch_ht
         // module base. Zero = profile incomplete (mod stays dormant).
         std::uintptr_t kGetPlayerViewPointRva;
 
-        // First bytes of the DECRYPTED GetPlayerViewPoint. FinchGame.exe ships
-        // SteamStub-packed: `.text` is ciphertext on disk and the stub decrypts
-        // it in-place at the entry point, which races our bootstrap thread.
-        // Hooking before the stub finishes makes MinHook build its trampoline
-        // out of ciphertext, and the first call executes that garbage. The
-        // bootstrap waits for these bytes to appear before touching the target.
-        PrologueBytes kGetPlayerViewPointPrologue;
+        // FNV-1a 64 of the first kPrologueBytes bytes of the DECRYPTED
+        // GetPlayerViewPoint. FinchGame.exe ships SteamStub-packed: `.text` is
+        // ciphertext on disk and the stub decrypts it in-place at the entry
+        // point, which races our bootstrap thread. Hooking before the stub
+        // finishes makes MinHook build its trampoline out of ciphertext, and
+        // the first call executes that garbage. The bootstrap hashes the live
+        // bytes each poll and waits for this value before touching the target.
+        //
+        // A one-way hash rather than the bytes themselves: this only has to
+        // answer "has the stub finished", which a digest does exactly as well,
+        // and it keeps no copy of the game's instruction stream in this repo.
+        std::uint64_t kGetPlayerViewPointPrologueHash;
 
         // Return-address RVAs of the distinct GetPlayerViewPoint call sites.
         // Head tracking is injected ONLY for callers flagged here per the

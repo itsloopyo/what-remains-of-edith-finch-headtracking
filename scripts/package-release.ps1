@@ -82,9 +82,16 @@ foreach ($vendorFile in @('dinput8.dll', 'LICENSE', 'README.md')) {
     Copy-Item $src -Destination $ghVendorDir -Force
 }
 
+# Throw rather than guard with Test-Path. The ZIP redistributes a vendored
+# loader and a binary with MinHook and cameraunlock-core linked into it, and
+# every one of those licences requires its notice to travel with the binary. A
+# silent skip would turn a licence violation into a green build.
 foreach ($doc in @('README.md', 'LICENSE', 'CHANGELOG.md', 'THIRD-PARTY-NOTICES.md')) {
-    $p = Join-Path $projectDir $doc
-    if (Test-Path $p) { Copy-Item -Path $p -Destination $ghStaging -Force }
+    $docSrc = Join-Path $projectDir $doc
+    if (-not (Test-Path $docSrc)) {
+        throw "Required document not found: $doc. The installer ZIP is a binary distribution and must carry it."
+    }
+    Copy-Item -Path $docSrc -Destination $ghStaging -Force
 }
 
 # Stamp mod_info.version from the build so the shipped manifest can never
@@ -108,8 +115,9 @@ Write-Host ("  $installerZip ({0:N1} KB)" -f $installerKb) -ForegroundColor Gree
 Write-Host ''
 Write-Host '--- Nexus ZIP ---' -ForegroundColor Yellow
 
-# Nexus users manage their own ASI loader, so this ships only the mod's .asi
-# under the deploy subtree - no vendored loader, no scripts, no docs.
+# Nexus users manage their own ASI loader, so this ships the mod's .asi under
+# the deploy subtree and no loader or install scripts - but it is still a binary
+# distribution, so the licence documents below go in at the ZIP root.
 $nexusStaging = Join-Path $releaseDir 'staging-nexus'
 if (Test-Path $nexusStaging) { Remove-Item -Recurse -Force $nexusStaging }
 $nexusGameDir = Join-Path $nexusStaging 'FinchGame\Binaries\Win64'
@@ -118,6 +126,14 @@ Copy-Item $asiPath -Destination $nexusGameDir -Force
 
 $nexusZip = Join-Path $releaseDir "$modName-v$version-nexus.zip"
 if (Test-Path $nexusZip) { Remove-Item $nexusZip -Force }
+foreach ($noticeDoc in @('LICENSE', 'THIRD-PARTY-NOTICES.md', 'README.md')) {
+    $noticeSrc = Join-Path $projectDir $noticeDoc
+    if (-not (Test-Path $noticeSrc)) {
+        throw "Required notice file not found: $noticeDoc. Every published ZIP is a binary distribution and must carry it."
+    }
+    Copy-Item $noticeSrc -Destination $nexusStaging -Force
+    Write-Host "  $noticeDoc" -ForegroundColor Green
+}
 Push-Location $nexusStaging
 try { Compress-Archive -Path '.\*' -DestinationPath $nexusZip -Force } finally { Pop-Location }
 Remove-Item -Recurse -Force $nexusStaging

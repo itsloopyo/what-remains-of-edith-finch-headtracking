@@ -2,12 +2,6 @@
 
 ## [1.1.0] - 2026-08-20
 
-### Added
-
-- drop mod-side recentring, keep one previous log generation
-
-## [Unreleased]
-
 ### Changed
 
 - Removed recentring from the mod. The `Home` / `Ctrl+Shift+T` hotkey is gone and

@@ -345,7 +345,7 @@ bool InstallViewPointHook() {
     // in a loaded process it can land inside an unrelated DLL that would be
     // hooked instead. Checked before the address is read or written to.
     if (targetAddress < ue::ModuleBase()
-        || targetAddress + Offsets().kGetPlayerViewPointPrologue.size() > ue::ModuleEnd()) {
+        || targetAddress + kPrologueBytes > ue::ModuleEnd()) {
         Log::Line("FATAL: profile %s puts GetPlayerViewPoint at RVA 0x%08llx, outside the "
                   "module - staying dormant; game runs vanilla.",
             builds::ActiveProfile().Name,
@@ -354,7 +354,7 @@ bool InstallViewPointHook() {
     }
 
     void* target = reinterpret_cast<void*>(targetAddress);
-    if (!WaitForDecryptedTarget(target, Offsets().kGetPlayerViewPointPrologue,
+    if (!WaitForDecryptedTarget(target, Offsets().kGetPlayerViewPointPrologueHash,
                                 builds::ActiveProfile().Name))
         return false;
 

@@ -1,4 +1,4 @@
-// UE4 (Ethan Carter Redux) camera-hook recon, Java GhidraScript (Ghidra 12
+// UE4 camera-hook recon, Java GhidraScript (Ghidra 12
 // dropped Jython, so the .py sibling needs PyGhidra; this one always runs).
 // Dumps:
 //   1. RTTI vftable symbols for *Controller / *CameraManager / *LocalPlayer.

@@ -1,7 +1,5 @@
 #include "steamstub.h"
 
-#include <cstring>
-
 #include <windows.h>
 
 #include "logging.h"
@@ -25,6 +23,16 @@ namespace finch_ht
             out.push_back(' ');
         }
         return out;
+    }
+
+    std::uint64_t HashBytes(const std::uint8_t* bytes, std::size_t count)
+    {
+        std::uint64_t hash = 0xcbf29ce484222325ULL;
+        for (std::size_t i = 0; i < count; ++i) {
+            hash ^= bytes[i];
+            hash *= 0x100000001b3ULL;
+        }
+        return hash;
     }
 
     bool PageIsExecutable(const void* address)
@@ -60,11 +68,11 @@ namespace finch_ht
         return start + bytes <= regionEnd;
     }
 
-    bool WaitForDecryptedTarget(const void* target, const PrologueBytes& expectedPrologue,
+    bool WaitForDecryptedTarget(const void* target, std::uint64_t expectedPrologueHash,
                                 const char* profileName)
     {
         const auto* got = static_cast<const std::uint8_t*>(target);
-        const std::size_t size = expectedPrologue.size();
+        const std::size_t size = kPrologueBytes;
 
         bool announcedDecryption = false;
         bool announcedEntryBytes = false;
@@ -81,8 +89,7 @@ namespace finch_ht
                     Log::Line("steamstub: target bytes at entry: %s (exec=%d)",
                         HexBytes(got, size).c_str(), PageIsExecutable(target) ? 1 : 0);
                 }
-                const bool decrypted =
-                    std::memcmp(got, expectedPrologue.data(), size) == 0;
+                const bool decrypted = HashBytes(got, size) == expectedPrologueHash;
                 if (decrypted && !announcedDecryption) {
                     announcedDecryption = true;
                     Log::Line("steamstub: decrypted prologue present after %d ms", waited);
@@ -97,7 +104,8 @@ namespace finch_ht
 
         Log::Line("FATAL: GetPlayerViewPoint never became a decrypted executable target "
                   "for profile %s after %d ms.", profileName, kTimeoutMs);
-        Log::Line("  expected: %s", HexBytes(expectedPrologue.data(), size).c_str());
+        Log::Line("  expected prologue hash: 0x%016llX",
+            static_cast<unsigned long long>(expectedPrologueHash));
         if (RangeIsReadable(target, size))
             Log::Line("  observed: %s (exec=%d)", HexBytes(got, size).c_str(),
                 PageIsExecutable(target) ? 1 : 0);

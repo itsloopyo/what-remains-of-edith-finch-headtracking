@@ -16,11 +16,13 @@ endif()
 
 # MinHook (for the GetPlayerViewPoint trampoline). Fetched + built locally;
 # cameraunlock-core's hook manager links against this `minhook` target.
+# Pinned to the commit v1.3.3 points at rather than the tag: a tag is mutable,
+# and THIRD-PARTY-NOTICES.md has to be able to name exactly what we shipped.
 include(FetchContent)
 FetchContent_Declare(
     minhook_src
     GIT_REPOSITORY https://github.com/TsudaKageyu/minhook.git
-    GIT_TAG        v1.3.3
+    GIT_TAG        9fbd087432700d73fc571118d6a9697a36443d88  # v1.3.3, 2017-01-07
 )
 FetchContent_MakeAvailable(minhook_src)
 add_library(minhook STATIC
