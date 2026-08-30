@@ -6,6 +6,10 @@
 #include "logging.h"
 #include "view_injection.h"
 
+#ifndef EDITHFINCH_DEV_HOTKEYS
+#define EDITHFINCH_DEV_HOTKEYS 0
+#endif
+
 namespace finch_ht
 {
     namespace
@@ -19,8 +23,10 @@ namespace finch_ht
         constexpr int kVkY = 0x59;
         constexpr int kVkG = 0x47;
         constexpr int kVkH = 0x48;
+#if EDITHFINCH_DEV_HOTKEYS
         constexpr int kVkU = 0x55;
         constexpr int kVkJ = 0x4A;
+#endif
 
         constexpr int kPollIntervalMs = 16;
 
@@ -49,6 +55,7 @@ namespace finch_ht
             Log::Line("hotkey: yaw mode %s", worldSpace ? "world" : "local");
         }
 
+#if EDITHFINCH_DEV_HOTKEYS
         void CycleInject(int direction)
         {
             const int mode = CycleInjectMode(Runtime().injectMode.load(), direction);
@@ -57,6 +64,7 @@ namespace finch_ht
                 static_cast<unsigned long long>(
                     CallerRvaForMode(mode, Offsets().kKnownCallerRvas)));
         }
+#endif
     }
 
     std::unique_ptr<cameraunlock::input::HotkeyPoller> StartHotkeys(Session& session,
@@ -75,10 +83,13 @@ namespace finch_ht
         poller->AddHotkey(kVkG, ChordGuarded([&session] { CycleTrackingMode(session); }));
         poller->AddHotkey(kVkH, ChordGuarded([] { ToggleYawMode(); }));
 
+#if EDITHFINCH_DEV_HOTKEYS
         // Dev: re-confirm the render caller in-game (cycle which GPV caller is
         // injected) without a rebuild. Ctrl+Shift+U next / Ctrl+Shift+J prev.
         poller->AddHotkey(kVkU, ChordGuarded([] { CycleInject(+1); }));
         poller->AddHotkey(kVkJ, ChordGuarded([] { CycleInject(-1); }));
+        Log::Line("dev: inject-mode hotkeys enabled (Ctrl+Shift+U / Ctrl+Shift+J)");
+#endif
 
         poller->Start(kPollIntervalMs);
         return poller;

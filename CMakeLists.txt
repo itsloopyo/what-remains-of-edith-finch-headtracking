@@ -37,6 +37,12 @@ if(MSVC)
     target_compile_options(minhook PRIVATE /wd4267 /wd4244 /wd4127 /wd4131)
 endif()
 
+# Cycling the inject mode live moves head tracking off the render caller, which
+# looks exactly like a broken mod to a player who trips the chord by accident.
+# The diagnostic is only wanted while re-deriving the render caller after a game
+# patch, so it is compiled out of anything a player runs.
+option(EDITHFINCH_DEV_HOTKEYS "Build the inject-mode diagnostic hotkeys (developer aid, not for release)" OFF)
+
 # Shared cameraunlock-core (C++ side) with the hook manager and UE runtime
 # helpers enabled.
 set(CAMERAUNLOCK_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -72,6 +78,14 @@ target_link_libraries(EdithFinchHeadTracking PRIVATE
     ws2_32
     psapi
 )
+
+if(EDITHFINCH_DEV_HOTKEYS)
+    target_compile_definitions(EdithFinchHeadTracking PRIVATE EDITHFINCH_DEV_HOTKEYS=1)
+    message(WARNING "EDITHFINCH_DEV_HOTKEYS is ON. This build registers Ctrl+Shift+U "
+                    "and Ctrl+Shift+J, which cycle which GetPlayerViewPoint caller is "
+                    "injected and can leave the view not following the head. "
+                    "Do not ship it.")
+endif()
 
 # Output as .asi for Ultimate ASI Loader.
 set_target_properties(EdithFinchHeadTracking PROPERTIES
