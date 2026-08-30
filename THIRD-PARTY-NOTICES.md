@@ -15,7 +15,7 @@ below; it ships in neither release ZIP.
 |-----------|---------|---------|--------------|
 | Ultimate ASI Loader | v9.7.2 | MIT | Bundled verbatim in the installer ZIP |
 | MinHook | v1.3.3 (`9fbd087`) | BSD-2-Clause | Compiled into `EdithFinchHeadTracking.asi` |
-| cameraunlock-core | `3465659` | MIT | Compiled into `EdithFinchHeadTracking.asi` |
+| cameraunlock-core | `0f7a634` | MIT | Compiled into `EdithFinchHeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -165,7 +165,7 @@ the one on this repository's `LICENSE`, so its notice is reproduced here in
 full and travels with every binary we publish.
 
 - Upstream: https://github.com/itsloopyo/cameraunlock-core
-- Pinned commit: `3465659888b2270addac9de0b2a728f59a00360c`
+- Pinned commit: `0f7a63455ddeb91677c9268e88fd35833aa77359`
 
 ```
 MIT License
