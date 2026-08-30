@@ -69,8 +69,9 @@ namespace finch_ht
         // Default inject mode at startup. 0 = all callers (diagnostic only),
         // 1..kMaxKnownCallers = inject only for kKnownCallerRvas[mode-1] (the
         // render-path caller / FMinimalViewInfo builder), and one past that =
-        // none. Ctrl+Shift+U / J cycle this live so the render caller can be
-        // re-confirmed in game after a patch without a rebuild.
+        // none. A -DEDITHFINCH_DEV_HOTKEYS=ON build adds Ctrl+Shift+U / J to
+        // cycle this live, so the render caller can be re-confirmed in game
+        // after a patch without a rebuild.
         int kDefaultInjectMode;
 
         // APlayerController::bShowMouseCursor bitfield, for the InGameplay

@@ -39,8 +39,8 @@ namespace finch_ht::builds
             // GetPlayerViewPoint call sites, captured at runtime with inject
             // mode 0 (which logs every call CHAIN plus counts). Slot [0] is the
             // render path; the rest are kept so a single in-game session can
-            // A/B them with Ctrl+Shift+U and so the next person can see what
-            // was rejected and why.
+            // A/B them with Ctrl+Shift+U in a -DEDITHFINCH_DEV_HOTKEYS=ON build,
+            // and so the next person can see what was rejected and why.
             //
             //  [0] 0x010cfeef  ULocalPlayer::GetViewPoint. Identified by the
             //      FMinimalViewInfo it fills - Location +0x00, Rotation +0x0C,
