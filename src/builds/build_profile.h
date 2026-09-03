@@ -97,6 +97,39 @@ namespace finch_ht
         std::uintptr_t kViewInfoCallerRva;
         std::size_t    kViewInfoRotationOffset;
         std::size_t    kViewInfoFovOffset;
+
+        // UKismetSystemLibrary::SphereTraceSingle, the engine's own Blueprint
+        // sweep. Calling this rather than UWorld::SweepSingleByChannel is what
+        // keeps FCollisionQueryParams - a non-trivial struct with a TArray in
+        // it - out of this mod entirely: every parameter here is a scalar, a
+        // pointer, or a TArray we build ourselves.
+        //
+        // Shipping compiles out the debug-draw colour and duration arguments,
+        // so the real signature is shorter than the UE4 headers show. It was
+        // read off the exec thunk's own call rather than from the headers:
+        //
+        //   bool SphereTraceSingle(UObject* WorldContext, const FVector* Start,
+        //       const FVector* End, float Radius, int TraceChannel,
+        //       bool bTraceComplex, const TArray<AActor*>* ActorsToIgnore,
+        //       int DrawDebugType, FHitResult* OutHit, bool bIgnoreSelf);
+        //
+        // Zero = no sweep available on this build, which leaves the lean
+        // collision clamp off however it is configured.
+        std::uintptr_t kSphereTraceSingleRva;
+
+        // FHitResult, as the sweep fills it. Size is what the exec thunk
+        // memsets before the call, and it MUST be right: the engine writes the
+        // whole struct, so a buffer sized from a different UE version is a
+        // stack overflow in our own frame.
+        std::size_t   kHitResultSize;
+        // Bit 0 of this byte is bBlockingHit - the worker tests exactly that.
+        std::size_t   kHitResultBlockingHitOffset;
+        // FHitResult::Location. For a SWEEP this is the centre of the sphere
+        // where it stopped, not the surface it touched, so it is already backed
+        // off by the radius and is directly the furthest the eye may travel.
+        // Confirmed by use rather than inferred: the worker's debug draw runs a
+        // line from Start to this field.
+        std::size_t   kHitResultLocationOffset;
     };
 
     struct BuildProfile

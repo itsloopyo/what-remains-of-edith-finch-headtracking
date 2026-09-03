@@ -22,6 +22,11 @@ const char* kIniName = "HeadTracking.ini";
 constexpr float kMaxSensitivity = 10.0f;
 constexpr float kMaxPositionLimit = 5.0f;   // metres
 constexpr float kMaxFovOffset = 160.0f;     // ClampFov bounds the result to [10, 170]
+// ETraceTypeQuery is a TEnumAsByte over a project's declared trace channels;
+// UE4 has room for 18 custom ones on top of the two built in, and nothing near
+// that many is ever declared. Wide enough to try every real channel, narrow
+// enough that a typo cannot run the engine's converter off its table.
+constexpr int kMaxTraceChannel = 31;
 
 // Nothing downstream of the INI rejects a bad float. strtod accepts "nan" and
 // "inf" and overflows a literal like 1e400 to +inf; a NaN sensitivity then
@@ -139,6 +144,25 @@ void LoadConfig(const std::string& exeDir, Config& out) {
                                               out.limit_z, 0.0f, kMaxPositionLimit);
     out.limit_z_back       = ReadFloatChecked(ini, "Position", "LimitZBack",
                                               out.limit_z_back, 0.0f, kMaxPositionLimit);
+    out.collision_enabled  = ini.ReadBool ("Position", "CollisionEnabled",  out.collision_enabled);
+    out.collision_radius   = ReadFloatChecked(ini, "Position", "CollisionRadius",
+                                              out.collision_radius, 1.0f, 100.0f);
+    // This one is handed to the engine's ETraceTypeQuery -> ECollisionChannel
+    // conversion, which indexes a table, so an out-of-range value is a read off
+    // the end of it rather than a trace that finds nothing. ReadInt also yields
+    // 0 rather than the default for a non-numeric value (ini_reader.h rule 4),
+    // and 0 is a legitimate channel, so the raw value is range-checked here
+    // rather than trusted.
+    const int rawChannel = ini.ReadInt("Position", "CollisionChannel", out.collision_channel);
+    if (rawChannel < 0 || rawChannel > kMaxTraceChannel) {
+        Log::Line("WARNING: config [Position] CollisionChannel = %d is not in 0-%d (a "
+                  "non-numeric value reads as 0) - using %d.",
+                  rawChannel, kMaxTraceChannel, out.collision_channel);
+    } else {
+        out.collision_channel = rawChannel;
+    }
+    out.collision_release_smoothing = ReadFloatChecked(ini, "Position", "CollisionReleaseSmoothing",
+                                                       out.collision_release_smoothing, 0.0f, 1.0f);
     WarnRetiredSmoothingKey(ini, "Position", "Smoothing");
 }
 

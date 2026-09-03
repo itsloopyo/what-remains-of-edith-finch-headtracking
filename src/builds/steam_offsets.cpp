@@ -75,6 +75,23 @@ namespace finch_ht::builds
             /* kViewInfoCallerRva      */ 0x010cfeefULL,
             /* kViewInfoRotationOffset */ 0x0C,
             /* kViewInfoFovOffset      */ 0x18,
+            // UKismetSystemLibrary::SphereTraceSingle. Found without walking
+            // control flow: the class's StaticRegisterNatives body LEAs the
+            // reflected name into rdx and the exec thunk into r8 seven bytes
+            // earlier, so a scan for rip-relative LEAs targeting the name
+            // string lands on the pair (.lab/leascan.py). Note the name is
+            // "SphereTraceSingle_NEW" - searching for the bare name finds
+            // nothing. That gave the thunk at 0x016a8230, whose one call that
+            // is not a VM parameter fetch is this static. Cross-checked by
+            // decompile: the worker it calls (0x010c0db0) builds its
+            // FCollisionQueryParams with the static trace tag
+            // L"SphereTraceSingle".
+            /* kSphereTraceSingleRva */ 0x010c10f0ULL,
+            // The thunk memsets exactly 0x80 bytes before the call and then
+            // writes Time at +0x04.
+            /* kHitResultSize              */ 0x80,
+            /* kHitResultBlockingHitOffset */ 0x00,
+            /* kHitResultLocationOffset    */ 0x0C,
         },
     };
 }

@@ -15,12 +15,14 @@
 #include "exe_paths.h"
 #include "fov_override.h"
 #include "hotkeys.h"
+#include "lean_trace.h"
 #include "logging.h"
 #include "runtime_state.h"
 #include "steamstub.h"
 #include "ue4_types.h"
 #include "view_injection.h"
 
+#include "cameraunlock/camera/lean_clamp.h"
 #include "cameraunlock/diagnostics/crash_handler.h"
 #include "cameraunlock/hooks/hook_manager.h"
 #include "cameraunlock/time/frame_clock.h"
@@ -50,6 +52,13 @@ std::atomic<std::uint64_t> g_hookCallCount{0};
 FrameClock g_frameClock;
 
 CallerCensus g_callerCensus;
+
+// Holds the release ease between frames, so it belongs beside the session
+// rather than inside the per-frame helper. Reset() is not wired to anything
+// yet: a chapter change cuts the camera, and carrying one room's wall into the
+// next one only costs the release time constant, which is cheaper than getting
+// the cut detection wrong.
+cameraunlock::camera::LeanClamp g_leanClamp;
 
 // ---- the hook ------------------------------------------------------------
 
@@ -140,6 +149,42 @@ void LogPoseSample(std::uint64_t call, std::uintptr_t retRva,
 
 // True while the game is on a camera the player is not looking through, logging
 // each transition. See IsPinnedDownView for which chapters do this and why.
+// Contact and query-failure are both states the player sees as "the lean
+// stopped working", and neither is visible from the pose sample, so they get
+// their own transition-logged line rather than a per-frame one.
+void LogLeanClamp(const cameraunlock::math::Vec3& wanted,
+                  const cameraunlock::math::Vec3& allowed) {
+    static std::atomic<bool> s_contact{false};
+    static std::atomic<bool> s_failed{false};
+
+    const bool failed = g_leanClamp.LastQueryFailed();
+    if (failed != s_failed.exchange(failed, std::memory_order_relaxed)) {
+        Log::Line("lean-clamp: sweep %s", failed
+            ? "FAILED - lean is running unclamped"
+            : "working again");
+    }
+
+    const bool contact = g_leanClamp.InContact();
+    if (contact != s_contact.exchange(contact, std::memory_order_relaxed)) {
+        Log::Line("lean-clamp: %s (wanted %.1fcm, allowed %.1fcm)",
+            contact ? "holding the view off geometry" : "clear",
+            wanted.Magnitude(), allowed.Magnitude());
+    }
+
+    // Transitions alone cannot distinguish "the sweep runs and the room is
+    // open" from "the sweep is not running at all", and those need different
+    // fixes. So sample it on the same 2s cadence as the pose, which is also
+    // what a user tuning CollisionChannel has to read to know whether the
+    // channel they picked stops on anything.
+    static std::atomic<std::uint64_t> s_lastSample{0};
+    const std::uint64_t now = GetTickCount64();
+    if (now - s_lastSample.load(std::memory_order_relaxed) >= kPoseSampleIntervalMs) {
+        s_lastSample.store(now, std::memory_order_relaxed);
+        Log::Line("lean-clamp sample: wanted %.1fcm allowed %.1fcm contact=%s",
+            wanted.Magnitude(), allowed.Magnitude(), contact ? "yes" : "no");
+    }
+}
+
 bool SuppressedForPinnedView(float cleanPitch) {
     static std::atomic<bool> s_pinned{false};
     const bool pinned = IsPinnedDownView(cleanPitch);
@@ -149,12 +194,28 @@ bool SuppressedForPinnedView(float cleanPitch) {
     return pinned;
 }
 
-ue::FVector ApplyPositionOffset(const ue::FQuat4d& baseQuat, FVector4f* outLocation) {
+ue::FVector ApplyPositionOffset(const ue::FQuat4d& baseQuat, FVector4f* outLocation,
+                                void* controller, float deltaTime) {
     float offsetX = 0.0f, offsetY = 0.0f, offsetZ = 0.0f;
     if (!g_session->GetPositionOffset(offsetX, offsetY, offsetZ))
         return ue::FVector{0.0, 0.0, 0.0};
 
-    const ue::FVector offset = PositionOffsetUE(baseQuat, offsetX, offsetY, offsetZ);
+    ue::FVector offset = PositionOffsetUE(baseQuat, offsetX, offsetY, offsetZ);
+
+    if (g_config.collision_enabled) {
+        // The sweep runs from where the GAME put the camera, which is the
+        // clean eye - outLocation still holds it, because the offset is added
+        // below rather than above.
+        const cameraunlock::math::Vec3 eye{outLocation->X, outLocation->Y, outLocation->Z};
+        const cameraunlock::math::Vec3 want{static_cast<float>(offset.X),
+                                            static_cast<float>(offset.Y),
+                                            static_cast<float>(offset.Z)};
+        const cameraunlock::math::Vec3 allowed =
+            g_leanClamp.Apply(eye, want, deltaTime, &lean_trace::Query, controller);
+        offset = ue::FVector{allowed.x, allowed.y, allowed.z};
+        LogLeanClamp(want, allowed);
+    }
+
     outLocation->X += static_cast<float>(offset.X);
     outLocation->Y += static_cast<float>(offset.Y);
     outLocation->Z += static_cast<float>(offset.Z);
@@ -212,7 +273,8 @@ void __fastcall GetPlayerViewPoint_Hook(void* self, FVector4f* outLocation, FRot
     if (!ShouldInjectForCaller(retRva, mode, Offsets().kKnownCallerRvas))
         return;
 
-    if (!g_session->Update(g_frameClock.Tick()))
+    const float frameDelta = g_frameClock.Tick();
+    if (!g_session->Update(frameDelta))
         return;
 
     HeadPose pose{};
@@ -227,7 +289,7 @@ void __fastcall GetPlayerViewPoint_Hook(void* self, FVector4f* outLocation, FRot
     const ue::FQuat4d baseQuat = ViewQuat(cleanRotation);
     *outRotation = ComposeTrackedRotation(cleanRotation, baseQuat, pose.yaw, pose.pitch, pose.roll,
         Runtime().worldSpaceYaw.load(std::memory_order_relaxed));
-    const ue::FVector positionOffset = ApplyPositionOffset(baseQuat, outLocation);
+    const ue::FVector positionOffset = ApplyPositionOffset(baseQuat, outLocation, self, frameDelta);
 
     LogPoseSample(call, retRva, cleanRotation, cleanLocation, pose, *outRotation, positionOffset);
 }
@@ -266,6 +328,16 @@ void ApplyConfigToSession() {
     position.limit_y_down  = g_config.limit_y;
     position.limit_z       = g_config.limit_z;
     position.limit_z_back  = g_config.limit_z_back;
+
+    cameraunlock::camera::LeanClampSettings clamp;
+    // The swept sphere's radius IS the standoff, so the clamp must not subtract
+    // one of its own on top - that would hold the eye back twice.
+    clamp.skin = 0.0f;
+    clamp.release_smoothing = g_config.collision_release_smoothing;
+    g_leanClamp.SetSettings(clamp);
+    g_leanClamp.Reset();
+    lean_trace::SetRadius(g_config.collision_radius);
+    lean_trace::SetChannel(g_config.collision_channel);
 
     g_session->SetMode(g_config.position_enabled
         ? TrackingMode::RotationAndPosition

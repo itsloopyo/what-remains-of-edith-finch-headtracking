@@ -42,6 +42,25 @@ struct Config {
     float limit_y = cameraunlock::PositionSettings{}.limit_y;
     float limit_z = cameraunlock::PositionSettings{}.limit_z;
     float limit_z_back = cameraunlock::PositionSettings{}.limit_z_back;
+
+    // Stop the lean putting the eye inside level geometry, by sweeping the
+    // engine's own collision from where the game put the camera toward where
+    // the head asks it to go. OFF until it has been confirmed in game: it calls
+    // into the engine every rendered frame the head is off centre, and an
+    // unverified channel either blocks on nothing or blocks on everything.
+    bool collision_enabled = false;
+    // Radius of the swept sphere, in UE units (cm), and so the standoff the eye
+    // keeps from a surface. Must exceed the camera's near clip distance or the
+    // wall is culled before the eye reaches it and the player sees through it
+    // anyway.
+    float collision_radius = 10.0f;
+    // ETraceTypeQuery index. Which one the level's geometry blocks is a project
+    // setting rather than an engine constant, so it is a value to try and read
+    // back out of the log, not a constant to hard-code.
+    int collision_channel = 0;
+    // How quickly the lean reopens once an obstruction clears, 0 to 1 on the
+    // same scale as the smoothing values. Tightening is never smoothed.
+    float collision_release_smoothing = 0.9f;
 };
 
 // Both take the directory holding the game EXE; the INI sits beside it.

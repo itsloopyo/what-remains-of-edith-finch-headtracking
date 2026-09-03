@@ -51,6 +51,52 @@ void MissingFileTests(int& failures)
     Check(failures, NearEqual(config.remote_smoothing, 0.15f),
           "remote smoothing defaults to 0.15 for a phone over WiFi");
     Check(failures, NearEqual(config.fov_offset, 0.0f), "the FOV is untouched by default");
+    // Off until it has been confirmed in the game. A default that quietly ran a
+    // collision query every frame, on a channel nobody had checked, is exactly
+    // the shape of change that reaches users as "the lean stopped working".
+    Check(failures, !config.collision_enabled,
+          "the lean collision clamp is off by default");
+    Check(failures, NearEqual(config.collision_radius, 10.0f),
+          "the default sweep radius is 10cm");
+    Check(failures, NearEqual(config.collision_release_smoothing, 0.9f),
+          "the default release smoothing is 0.9");
+}
+
+void CollisionChannelGuardTests(int& failures)
+{
+    // ReadInt answers 0, not the default, for a value it cannot parse
+    // (ini_reader.h rule 4), and 0 is a legitimate channel, so a typo here
+    // would look like a deliberate choice. The value is also handed to the
+    // engine's ETraceTypeQuery -> ECollisionChannel conversion, which indexes a
+    // table: out of range is a read off the end of it, not a trace that finds
+    // nothing.
+    {
+        const std::string dir = MakeTempDir();
+        WriteIni(dir, "[Position]\nCollisionChannel=999\n");
+        finch_ht::Config config;
+        config.collision_channel = 1;
+        finch_ht::LoadConfig(dir, config);
+        Check(failures, config.collision_channel == 1,
+              "an out-of-range CollisionChannel keeps the value it had");
+    }
+    {
+        const std::string dir = MakeTempDir();
+        WriteIni(dir, "[Position]\nCollisionChannel=-3\n");
+        finch_ht::Config config;
+        config.collision_channel = 1;
+        finch_ht::LoadConfig(dir, config);
+        Check(failures, config.collision_channel == 1,
+              "a negative CollisionChannel keeps the value it had");
+    }
+    {
+        const std::string dir = MakeTempDir();
+        WriteIni(dir, "[Position]\nCollisionChannel=0\n");
+        finch_ht::Config config;
+        config.collision_channel = 1;
+        finch_ht::LoadConfig(dir, config);
+        Check(failures, config.collision_channel == 0,
+              "channel 0 is a real channel and is kept, not treated as a parse failure");
+    }
 }
 
 void ParsingTests(int& failures)
@@ -65,7 +111,9 @@ void ParsingTests(int& failures)
         "LocalSmoothing=0.25\nRemoteSmoothing=0.75\n"
         "[View]\nFovOffset=25.0\n"
         "[Position]\nEnabled=0\nSensitivityX=2.0\nSensitivityY=3.0\nSensitivityZ=4.0\n"
-        "LimitX=0.11\nLimitY=0.22\nLimitZ=0.33\nLimitZBack=0.44\n");
+        "LimitX=0.11\nLimitY=0.22\nLimitZ=0.33\nLimitZBack=0.44\n"
+        "CollisionEnabled=1\nCollisionRadius=14.0\nCollisionChannel=2\n"
+        "CollisionReleaseSmoothing=0.4\n");
 
     finch_ht::Config config;
     finch_ht::LoadConfig(dir, config);
@@ -78,6 +126,11 @@ void ParsingTests(int& failures)
                  && NearEqual(config.pitch_sensitivity, 0.5f)
                  && NearEqual(config.roll_sensitivity, 2.0f),
           "the rotation sensitivities are read");
+    Check(failures, config.collision_enabled
+                 && NearEqual(config.collision_radius, 14.0f)
+                 && config.collision_channel == 2
+                 && NearEqual(config.collision_release_smoothing, 0.4f),
+          "the lean collision settings are read");
     Check(failures, config.invert_yaw && config.invert_pitch && config.invert_roll,
           "the inversion flags are read");
     Check(failures, NearEqual(config.local_smoothing, 0.25f)
@@ -286,6 +339,7 @@ int RunConfigTests()
     std::cout << "Config tests\n";
     MissingFileTests(failures);
     ParsingTests(failures);
+    CollisionChannelGuardTests(failures);
     RetiredSmoothingKeyTests(failures);
     WrittenDefaultsMatchCompiledDefaultsTests(failures);
     PortValidationTests(failures);

@@ -40,6 +40,26 @@ int RunBuildProfileTests()
     Check(failures, offsets.kGetPlayerViewPointPrologueHash != 0,
           "the decrypted prologue hash is pinned, so the SteamStub wait has something to match");
 
+    // The lean collision sweep. Its parameters were read off the exec thunk and
+    // the FHitResult numbers off what that thunk zeroes, so what is checkable
+    // here is that they stay mutually consistent: an FHitResult whose Location
+    // sits outside the struct would have the mod reading its own uninitialised
+    // stack and clamping the lean to a number from nowhere.
+    Check(failures, offsets.kSphereTraceSingleRva != 0,
+          "the profile carries SphereTraceSingle, so the collision clamp can be switched on");
+
+    Check(failures, offsets.kHitResultSize == 0x80,
+          "FHitResult is the 0x80 bytes the exec thunk memsets");
+
+    Check(failures, offsets.kHitResultLocationOffset + 12 <= offsets.kHitResultSize,
+          "FHitResult::Location and its three floats land inside the struct");
+
+    Check(failures, offsets.kHitResultBlockingHitOffset < offsets.kHitResultSize,
+          "the bBlockingHit byte lands inside the struct");
+
+    Check(failures, offsets.kSphereTraceSingleRva != offsets.kGetPlayerViewPointRva,
+          "the sweep and the hook target are different functions");
+
     Check(failures, offsets.kDefaultInjectMode >= finch_ht::kInjectModeFirstCaller
                  && offsets.kDefaultInjectMode <= finch_ht::kInjectModeLastCaller,
           "the default inject mode selects a single caller, not all or none");
