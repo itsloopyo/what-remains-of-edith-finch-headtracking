@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.1.1] - 2026-09-03
+
+### Added
+
+- optional lean collision clamp, off by default
+
+### Fixed
+
+- mirror the vertical limit and restore the MIT grant
+- re-sync THIRD-PARTY-NOTICES.md before cutting the tag
+
 ## [1.1.0] - 2026-08-20
 
 ### Changed
