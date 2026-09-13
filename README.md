@@ -8,6 +8,7 @@ An unofficial head tracking mod for What Remains of Edith Finch that moves the v
 
 - **Decoupled look and aim** - head tracking moves what you see; the mouse or controller still drives where the game thinks you are looking, so interaction prompts and line traces are unchanged.
 - **6DOF positional tracking** - lean, peek, and move closer to look around the scene.
+- **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
 - **Field of view control** - the game ships no FOV setting, so the mod adds one.
 
 ## Requirements
@@ -17,6 +18,13 @@ An unofficial head tracking mod for What Remains of Edith Finch that moves the v
 - Windows 10 or 11, 64-bit.
 
 ## Installation
+
+### Lopari
+
+Download [Lopari](https://lopari.app), choose **What Remains of Edith Finch**, and click
+**Play with head tracking**.
+
+### Standalone Installer
 
 1. Download the latest `EdithFinchHeadTracking-v<version>-installer.zip` from the [Releases](../../releases) page.
 2. Extract it anywhere.
