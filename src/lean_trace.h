@@ -23,9 +23,21 @@ namespace finch_ht::lean_trace {
 // culled before the eye reaches it and the wall goes transparent anyway.
 void SetRadius(float centimetres);
 
+// ETraceTypeQuery is a TEnumAsByte over a project's declared trace channels;
+// UE4 has room for 18 custom ones on top of the two built in, and nothing near
+// that many is ever declared. The engine's ETraceTypeQuery -> ECollisionChannel
+// conversion indexes a table, so a number past this is a read off the end of it
+// rather than a trace that finds nothing.
+constexpr int kMaxTraceChannel = 31;
+
+inline bool IsTraceChannel(int traceTypeQuery) {
+    return traceTypeQuery >= 0 && traceTypeQuery <= kMaxTraceChannel;
+}
+
 // Which ETraceTypeQuery the sweep runs on. Configurable because the channel a
 // level's geometry blocks is a project setting, not an engine constant, and the
-// only way to know is to run it and read the log.
+// only way to know is to run it and read the log. Takes only a channel
+// IsTraceChannel accepts.
 void SetChannel(int traceTypeQuery);
 
 // Resolves the sweep against the active build profile. False, having logged

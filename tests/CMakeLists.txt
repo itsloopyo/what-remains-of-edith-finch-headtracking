@@ -2,17 +2,14 @@
 # compiled in - headtracking_mod.cpp, fov_override.cpp and hotkeys.cpp are left
 # out because they only do anything against a live hook. The ones listed do pull
 # core in (caller_trace.cpp needs the UE runtime for the module range,
-# steamstub.cpp and config.cpp need core's logger and INI reader), which is what
-# the target_link_libraries below satisfies.
+# steamstub.cpp needs core's logger), which is what the target_link_libraries
+# below satisfies.
 add_executable(edithfinch_tests
     test_main.cpp
     view_injection_tests.cpp
-    config_tests.cpp
     diagnostics_tests.cpp
     build_profile_tests.cpp
     ${CMAKE_SOURCE_DIR}/src/caller_trace.cpp
-    ${CMAKE_SOURCE_DIR}/src/config.cpp
-    ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
     ${CMAKE_SOURCE_DIR}/src/exe_paths.cpp
     ${CMAKE_SOURCE_DIR}/src/steamstub.cpp
     ${CMAKE_SOURCE_DIR}/src/builds/steam_offsets.cpp
@@ -33,6 +30,24 @@ if(MSVC)
 endif()
 
 add_test(NAME edithfinch_tests COMMAND edithfinch_tests)
+
+# The canonical config, the committed file and the toggles' saves. Also the
+# renderer behind `pixi run render-config` (--render-config <path>).
+add_executable(finch_config_tests
+    config_tests.cpp
+    ${CMAKE_SOURCE_DIR}/src/config.cpp
+    ${CMAKE_SOURCE_DIR}/src/legacy_config/legacy_config.cpp
+)
+target_include_directories(finch_config_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/cameraunlock-core/cpp/include
+)
+target_link_libraries(finch_config_tests PRIVATE cameraunlock)
+target_compile_definitions(finch_config_tests PRIVATE FINCH_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+if(MSVC)
+    target_compile_options(finch_config_tests PRIVATE /W4 /WX)
+endif()
+add_test(NAME finch_config_tests COMMAND finch_config_tests)
 
 # The differential test for the config conversion. The oracle is the reader of
 # the newest published build (v1.1.1), compiled from its own sources with the
@@ -71,3 +86,10 @@ if(MSVC)
     target_compile_options(finch_config_differential_tests PRIVATE /W4 /WX)
 endif()
 add_test(NAME finch_config_differential_tests COMMAND finch_config_differential_tests)
+
+# Core's canonical config lint over the committed file and every file the
+# differential test migrated, which it writes beside itself under migrated\.
+add_test(NAME finch_config_lint COMMAND node
+    ${CMAKE_SOURCE_DIR}/tests/config_differential/lint-migrated.mjs
+    $<TARGET_FILE_DIR:finch_config_differential_tests>/migrated)
+set_tests_properties(finch_config_lint PROPERTIES DEPENDS finch_config_differential_tests)

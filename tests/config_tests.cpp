@@ -1,351 +1,287 @@
-// Characterization tests for the INI contract: the keys the frozen reader
-// reads, the defaults it falls back to, and the agreement between the file the
-// mod writes on first run and the defaults compiled into Config. A key renamed
-// on one side only would otherwise ship as a setting that silently does nothing.
-
-#include "config.h"
-#include "legacy_config/legacy_config.h"
+// CameraUnlock.ini in the canonical config format.
+//
+// The committed CameraUnlock.ini is the table's fresh render, which is also what
+// the owner creates beside the game exe at first launch: `default` on every
+// global row, so each follows Defaults.ini, the game's own collision margin and
+// channel, and the mod's FovOffset. A toggle's save changes the lines of its rows
+// and no other byte. An older HeadTracking.ini is imported once into a new
+// CameraUnlock.ini through the frozen import and is never written;
+// tests/config_differential/ holds that to the published build over the whole
+// corpus, and the cases here are the ones worth reading as examples.
+//
+// `finch_config_tests --render-config <path>` writes the fresh render to <path>
+// and exits, which is how `pixi run render-config` rewrites the committed file
+// after a change to a row, a comment or a default.
 
 #include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <set>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <windows.h>
 
-#include "test_support.h"
+#include "config.h"
+#include "lean_trace.h"
 
 namespace {
 
-using finch_tests::Check;
-using finch_tests::NearEqual;
+namespace cfg = ::cameraunlock::config;
+namespace fs = std::filesystem;
+using cameraunlock::TrackingMode;
 
-std::string MakeTempDir()
-{
-    char tempRoot[MAX_PATH]{};
-    GetTempPathA(MAX_PATH, tempRoot);
-    std::string dir = std::string(tempRoot) + "finch-ht-config-tests";
-    CreateDirectoryA(dir.c_str(), nullptr);
-    DeleteFileA((dir + "\\HeadTracking.ini").c_str());
-    return dir;
+int g_checks = 0;
+int g_failures = 0;
+
+void Check(bool ok, const std::string& what) {
+    ++g_checks;
+    if (ok) return;
+    ++g_failures;
+    std::printf("FAIL %s\n", what.c_str());
 }
 
-void WriteIni(const std::string& dir, const char* body)
-{
-    FILE* file = nullptr;
-    fopen_s(&file, (dir + "\\HeadTracking.ini").c_str(), "w");
-    if (file == nullptr) return;
-    std::fputs(body, file);
-    std::fclose(file);
+std::string ReadFileBytes(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot open " + path.string());
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
-void MissingFileTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-
-    finch_ht::legacy::Config config;
-    finch_ht::legacy::Load(dir, config);
-
-    Check(failures, config.udp_port == 4242, "a missing INI leaves the OpenTrack port at 4242");
-    Check(failures, config.enable_on_startup, "a missing INI leaves tracking enabled on startup");
-    Check(failures, config.world_space_yaw, "a missing INI leaves yaw horizon-locked");
-    Check(failures, NearEqual(config.local_smoothing, 0.0f),
-          "local smoothing defaults to 0 - a tracker on this machine is already stable");
-    Check(failures, NearEqual(config.remote_smoothing, 0.15f),
-          "remote smoothing defaults to 0.15 for a phone over WiFi");
-    Check(failures, NearEqual(config.fov_offset, 0.0f), "the FOV is untouched by default");
-    // Off until it has been confirmed in the game. A default that quietly ran a
-    // collision query every frame, on a channel nobody had checked, is exactly
-    // the shape of change that reaches users as "the lean stopped working".
-    Check(failures, !config.collision_enabled,
-          "the lean collision clamp is off by default");
-    Check(failures, NearEqual(config.collision_radius, 10.0f),
-          "the default sweep radius is 10cm");
-    Check(failures, NearEqual(config.collision_release_smoothing, 0.9f),
-          "the default release smoothing is 0.9");
+void WriteFileBytes(const fs::path& path, const std::string& bytes) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    if (!out) throw std::runtime_error("cannot write " + path.string());
 }
 
-void CollisionChannelGuardTests(int& failures)
-{
-    // ReadInt answers 0, not the default, for a value it cannot parse
-    // (ini_reader.h rule 4), and 0 is a legitimate channel, so a typo here
-    // would look like a deliberate choice. The value is also handed to the
-    // engine's ETraceTypeQuery -> ECollisionChannel conversion, which indexes a
-    // table: out of range is a read off the end of it, not a trace that finds
-    // nothing.
-    {
-        const std::string dir = MakeTempDir();
-        WriteIni(dir, "[Position]\nCollisionChannel=999\n");
-        finch_ht::legacy::Config config;
-        config.collision_channel = 1;
-        finch_ht::legacy::Load(dir, config);
-        Check(failures, config.collision_channel == 1,
-              "an out-of-range CollisionChannel keeps the value it had");
+std::string Rendered() { return cfg::RenderCanonicalFresh(finch_ht::config::Table(), finch_ht::config::Header()); }
+
+std::string CommittedFile() { return ReadFileBytes(fs::path(FINCH_SOURCE_DIR) / "CameraUnlock.ini"); }
+
+// A folder of its own per case, removed afterwards: `game` stands for the folder
+// holding the game exe, and Defaults.ini sits in `global` beside it.
+class Scratch {
+public:
+    explicit Scratch(const char* tag) {
+        wchar_t temp[MAX_PATH + 1] = {};
+        if (GetTempPathW(MAX_PATH + 1, temp) == 0) throw std::runtime_error("GetTempPathW failed");
+        root_ = fs::path(temp) / ("finch_ht_config_" + std::string(tag) + "_" + std::to_string(GetCurrentProcessId()));
+        fs::remove_all(root_);
+        fs::create_directories(game());
     }
-    {
-        const std::string dir = MakeTempDir();
-        WriteIni(dir, "[Position]\nCollisionChannel=-3\n");
-        finch_ht::legacy::Config config;
-        config.collision_channel = 1;
-        finch_ht::legacy::Load(dir, config);
-        Check(failures, config.collision_channel == 1,
-              "a negative CollisionChannel keeps the value it had");
+    Scratch(const Scratch&) = delete;
+    Scratch& operator=(const Scratch&) = delete;
+    // A scanner can still hold a file the test just wrote, and a destructor must
+    // not throw, so a folder left behind is reported and the run carries on.
+    ~Scratch() {
+        std::error_code error;
+        fs::remove_all(root_, error);
+        if (error) std::printf("  scratch folder left behind: %s: %s\n", root_.string().c_str(), error.message().c_str());
     }
-    {
-        const std::string dir = MakeTempDir();
-        WriteIni(dir, "[Position]\nCollisionChannel=0\n");
-        finch_ht::legacy::Config config;
-        config.collision_channel = 1;
-        finch_ht::legacy::Load(dir, config);
-        Check(failures, config.collision_channel == 0,
-              "channel 0 is a real channel and is kept, not treated as a parse failure");
+
+    fs::path game() const { return root_ / "game"; }
+    fs::path ini() const { return game() / "CameraUnlock.ini"; }
+    fs::path legacy() const { return game() / "HeadTracking.ini"; }
+    fs::path defaults() const { return root_ / "global" / "Defaults.ini"; }
+
+    finch_ht::Config Load() const {
+        return finch_ht::config::Load(game().wstring(), cfg::DefaultsFile::At(defaults().wstring()));
+    }
+
+    std::set<std::string> Names() const {
+        std::set<std::string> names;
+        for (const auto& entry : fs::directory_iterator(game())) names.insert(entry.path().filename().string());
+        return names;
+    }
+
+private:
+    fs::path root_;
+};
+
+std::vector<std::string> Lines(const std::string& bytes) {
+    std::vector<std::string> lines;
+    std::size_t start = 0;
+    for (std::size_t end; (end = bytes.find("\r\n", start)) != std::string::npos; start = end + 2) {
+        lines.push_back(bytes.substr(start, end - start));
+    }
+    return lines;
+}
+
+// The lines that differ between two files of the same line count, or "count" when
+// the counts differ.
+std::vector<std::string> ChangedLines(const std::string& before, const std::string& after) {
+    const std::vector<std::string> a = Lines(before), b = Lines(after);
+    if (a.size() != b.size()) return {"count"};
+    std::vector<std::string> changed;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i] != b[i]) changed.push_back(b[i]);
+    }
+    return changed;
+}
+
+bool Holds(const std::string& bytes, const std::string& line) {
+    return bytes.find("\r\n" + line + "\r\n") != std::string::npos;
+}
+
+void TheCommittedFileIsTheFreshRender() {
+    Check(Rendered() == CommittedFile(), "CameraUnlock.ini is the table's fresh render; run pixi run render-config");
+}
+
+// Every global row holds `default`. The collision margin and channel are every
+// game's own, the margin as a value and the channel, an Engine row, commented at
+// its default; FovOffset is this mod's row.
+void TheCommittedFileFollowsDefaultsIni() {
+    const std::string committed = CommittedFile();
+    for (const char* line :
+         {"UdpPort=default", "EnableOnStartup=default", "WorldSpaceYaw=default", "RotationEnabled=default",
+          "LocalSmoothing=default", "RemoteSmoothing=default", "PositionEnabled=default",
+          "PositionLimitX=default", "PositionLimitY=default", "PositionLimitYDown=default", "PositionLimitZ=default",
+          "PositionLimitZBack=default", "CollisionEnabled=default", "CollisionReleaseSmoothing=default",
+          "ToggleKey=default", "CycleTrackingModeKey=default", "YawModeKey=default", "CollisionMargin=10.0",
+          "; CollisionChannel=0", "FovOffset=0.0"}) {
+        Check(Holds(committed, line), std::string("the committed file holds ") + line);
     }
 }
 
-void ParsingTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    WriteIni(dir,
-        "[Network]\nUdpPort=5252\n"
-        "[General]\nEnableOnStartup=0\nWorldSpaceYaw=0\n"
-        "[Hotkeys]\nYawModeKey=0x51\n"
-        "[Rotation]\nYawSensitivity=1.5\nPitchSensitivity=0.5\nRollSensitivity=2.0\n"
-        "InvertYaw=1\nInvertPitch=1\nInvertRoll=1\n"
-        "LocalSmoothing=0.25\nRemoteSmoothing=0.75\n"
-        "[View]\nFovOffset=25.0\n"
-        "[Position]\nEnabled=0\nSensitivityX=2.0\nSensitivityY=3.0\nSensitivityZ=4.0\n"
-        "LimitX=0.11\nLimitY=0.22\nLimitZ=0.33\nLimitZBack=0.44\n"
-        "CollisionEnabled=1\nCollisionRadius=14.0\nCollisionChannel=2\n"
-        "CollisionReleaseSmoothing=0.4\n");
-
-    finch_ht::legacy::Config config;
-    finch_ht::legacy::Load(dir, config);
-
-    Check(failures, config.udp_port == 5252, "UdpPort is read from [Network]");
-    Check(failures, !config.enable_on_startup && !config.world_space_yaw,
-          "the [General] booleans are read");
-    Check(failures, config.yaw_mode_key == 0x51, "YawModeKey is read as hex");
-    Check(failures, NearEqual(config.yaw_sensitivity, 1.5f)
-                 && NearEqual(config.pitch_sensitivity, 0.5f)
-                 && NearEqual(config.roll_sensitivity, 2.0f),
-          "the rotation sensitivities are read");
-    Check(failures, config.collision_enabled
-                 && NearEqual(config.collision_radius, 14.0f)
-                 && config.collision_channel == 2
-                 && NearEqual(config.collision_release_smoothing, 0.4f),
-          "the lean collision settings are read");
-    Check(failures, config.invert_yaw && config.invert_pitch && config.invert_roll,
-          "the inversion flags are read");
-    Check(failures, NearEqual(config.local_smoothing, 0.25f)
-                 && NearEqual(config.remote_smoothing, 0.75f),
-          "both smoothing parameters are read");
-    Check(failures, NearEqual(config.fov_offset, 25.0f), "FovOffset is read from [View]");
-    Check(failures, !config.position_enabled, "position tracking can be switched off");
-    Check(failures, NearEqual(config.position_sensitivity_x, 2.0f)
-                 && NearEqual(config.position_sensitivity_y, 3.0f)
-                 && NearEqual(config.position_sensitivity_z, 4.0f),
-          "the position sensitivities are read");
-    Check(failures, NearEqual(config.limit_x, 0.11f) && NearEqual(config.limit_y, 0.22f)
-                 && NearEqual(config.limit_z, 0.33f) && NearEqual(config.limit_z_back, 0.44f),
-          "the position limits are read");
+void FirstLaunchCreatesTheCommittedFile() {
+    Scratch s("created");
+    const finch_ht::Config loaded = s.Load();
+    Check(ReadFileBytes(s.ini()) == CommittedFile(), "the first launch writes the committed file byte for byte");
+    Check(s.Names() == std::set<std::string>{"CameraUnlock.ini"},
+          "the first launch creates CameraUnlock.ini and nothing else beside the exe");
+    Check(fs::exists(s.defaults()), "the first launch creates Defaults.ini where none exists");
+    Check(loaded.toggle_key == "End, Ctrl+Shift+Y", "ToggleKey starts at End, Ctrl+Shift+Y");
+    Check(loaded.cycle_tracking_mode_key == "PageUp, Ctrl+Shift+G", "CycleTrackingModeKey starts at PageUp, Ctrl+Shift+G");
+    Check(loaded.yaw_mode_key == "PageDown, Ctrl+Shift+H", "YawModeKey starts at PageDown, Ctrl+Shift+H");
+    Check(loaded.enable_on_startup && loaded.world_space_yaw, "tracking starts on, in world-space yaw");
+    Check(finch_ht::config::StartupTrackingMode(loaded) == TrackingMode::RotationAndPosition,
+          "tracking starts in rotation and position");
+    Check(loaded.collision_enabled, "the lean collision clamp starts on");
+    Check(loaded.collision_margin == 10.0f && loaded.collision_channel == 0,
+          "the sweep keeps 10cm off a surface, on channel 0");
+    Check(loaded.fov_offset == 0.0f, "the field of view is the game's own");
 }
 
-void RetiredSmoothingKeyTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    WriteIni(dir, "[Rotation]\nSmoothing=0.9\n");
-
-    finch_ht::legacy::Config config;
-    finch_ht::legacy::Load(dir, config);
-
-    Check(failures, NearEqual(config.local_smoothing, 0.0f)
-                 && NearEqual(config.remote_smoothing, 0.15f),
-          "the retired single Smoothing key is ignored, not migrated");
+// A value in Defaults.ini reaches every row holding `default`, and never the
+// game's own collision margin.
+void ADefaultRowFollowsDefaultsIni() {
+    Scratch s("follows");
+    s.Load();
+    WriteFileBytes(s.defaults(), "[CameraUnlock]\r\nConfigFormat=1\r\n\r\n[General]\r\nWorldSpaceYaw=false\r\n\r\n"
+                                 "[Position]\r\nCollisionEnabled=false\r\nCollisionMargin=3.0\r\n\r\n"
+                                 "[Hotkeys]\r\nToggleKey=F8\r\n");
+    const finch_ht::Config c = s.Load();
+    Check(c.toggle_key == "F8", "ToggleKey follows Defaults.ini");
+    Check(!c.world_space_yaw, "WorldSpaceYaw follows Defaults.ini");
+    Check(!c.collision_enabled, "CollisionEnabled follows Defaults.ini");
+    Check(c.collision_margin == 10.0f, "the collision margin is the game's own");
 }
 
-void WrittenDefaultsMatchCompiledDefaultsTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-    finch_ht::WriteDefaultConfigIfMissing(dir);
-
-    finch_ht::Config written;
-    finch_ht::LoadConfig(dir, written);
-    const finch_ht::Config compiled;
-
-    const bool same =
-        written.udp_port == compiled.udp_port &&
-        written.enable_on_startup == compiled.enable_on_startup &&
-        written.world_space_yaw == compiled.world_space_yaw &&
-        written.yaw_mode_key == compiled.yaw_mode_key &&
-        NearEqual(written.yaw_sensitivity, compiled.yaw_sensitivity) &&
-        NearEqual(written.pitch_sensitivity, compiled.pitch_sensitivity) &&
-        NearEqual(written.roll_sensitivity, compiled.roll_sensitivity) &&
-        written.invert_yaw == compiled.invert_yaw &&
-        written.invert_pitch == compiled.invert_pitch &&
-        written.invert_roll == compiled.invert_roll &&
-        NearEqual(written.local_smoothing, compiled.local_smoothing) &&
-        NearEqual(written.remote_smoothing, compiled.remote_smoothing) &&
-        NearEqual(written.fov_offset, compiled.fov_offset) &&
-        written.position_enabled == compiled.position_enabled &&
-        NearEqual(written.position_sensitivity_x, compiled.position_sensitivity_x) &&
-        NearEqual(written.position_sensitivity_y, compiled.position_sensitivity_y) &&
-        NearEqual(written.position_sensitivity_z, compiled.position_sensitivity_z) &&
-        NearEqual(written.limit_x, compiled.limit_x) &&
-        NearEqual(written.limit_y, compiled.limit_y) &&
-        NearEqual(written.limit_z, compiled.limit_z) &&
-        NearEqual(written.limit_z_back, compiled.limit_z_back);
-    Check(failures, same, "the INI written on first run round-trips to the compiled defaults");
-
-    // Second call must not clobber a user's edits.
-    WriteIni(dir, "[Network]\nUdpPort=9999\n");
-    finch_ht::WriteDefaultConfigIfMissing(dir);
-    finch_ht::Config afterSecondCall;
-    finch_ht::LoadConfig(dir, afterSecondCall);
-    Check(failures, afterSecondCall.udp_port == 9999,
-          "an existing INI is never overwritten");
+void TheYawToggleSavesItsLineAndNothingElse() {
+    Scratch s("save_yaw");
+    s.Load();
+    const std::string before = ReadFileBytes(s.ini());
+    const std::string defaults = ReadFileBytes(s.defaults());
+    finch_ht::config::SaveWorldSpaceYaw(false);
+    Check(ChangedLines(before, ReadFileBytes(s.ini())) == std::vector<std::string>{"WorldSpaceYaw=false"},
+          "a yaw save writes WorldSpaceYaw over default, and nothing else");
+    Check(ReadFileBytes(s.defaults()) == defaults, "a save leaves Defaults.ini as it was");
+    Check(!s.Load().world_space_yaw, "the saved yaw mode comes back at the next launch");
 }
 
-// Nothing downstream of the reader rejects a bad value, so the INI is the only
-// place a hostile or fat-fingered number can be stopped. Each case below has a
-// failure mode that reaches the player with no diagnostic: a port that binds
-// somewhere the tracker never reaches, a NaN that poisons the pose pipeline for
-// the rest of the session, or a negative limit that pins the camera off-centre.
-void PortValidationTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
+// The mode is one setting in two rows, so a save writes both.
+void TheModeCycleSavesThePair() {
+    Scratch s("save_mode");
+    s.Load();
+    const std::string before = ReadFileBytes(s.ini());
 
-    // GetPrivateProfileIntA yields 0 - not the default - for text it cannot
-    // parse, and bind(0) succeeds on an OS-assigned ephemeral port.
-    WriteIni(dir, "[Network]\nUdpPort=not-a-number\n");
-    finch_ht::legacy::Config garbage;
-    finch_ht::legacy::Load(dir, garbage);
-    Check(failures, garbage.udp_port == 4242,
-          "a non-numeric UdpPort falls back to 4242 instead of binding port 0");
+    finch_ht::config::SaveTrackingMode(TrackingMode::RotationOnly);
+    Check(ChangedLines(before, ReadFileBytes(s.ini())) ==
+              (std::vector<std::string>{"RotationEnabled=true", "PositionEnabled=false"}),
+          "rotation only writes the pair over default");
 
-    // 70000 & 0xFFFF == 4464: a raw cast to uint16_t would bind a wrong port.
-    WriteIni(dir, "[Network]\nUdpPort=70000\n");
-    finch_ht::legacy::Config tooBig;
-    finch_ht::legacy::Load(dir, tooBig);
-    Check(failures, tooBig.udp_port == 4242,
-          "a UdpPort above 65535 falls back rather than truncating to 4464");
+    finch_ht::config::SaveTrackingMode(TrackingMode::PositionOnly);
+    Check(ChangedLines(before, ReadFileBytes(s.ini())) ==
+              (std::vector<std::string>{"RotationEnabled=false", "PositionEnabled=true"}),
+          "position only writes the pair");
+    Check(finch_ht::config::StartupTrackingMode(s.Load()) == TrackingMode::PositionOnly,
+          "the saved mode comes back at the next launch");
 
-    WriteIni(dir, "[Network]\nUdpPort=-1\n");
-    finch_ht::legacy::Config negative;
-    finch_ht::legacy::Load(dir, negative);
-    Check(failures, negative.udp_port == 4242, "a negative UdpPort falls back");
-
-    WriteIni(dir, "[Network]\nUdpPort=80\n");
-    finch_ht::legacy::Config privileged;
-    finch_ht::legacy::Load(dir, privileged);
-    Check(failures, privileged.udp_port == 4242,
-          "a port below the OpenTrack 1024 floor falls back");
-
-    WriteIni(dir, "[Network]\nUdpPort=65535\n");
-    finch_ht::legacy::Config edge;
-    finch_ht::legacy::Load(dir, edge);
-    Check(failures, edge.udp_port == 65535, "the top of the valid range is accepted");
+    finch_ht::config::SaveTrackingMode(TrackingMode::RotationAndPosition);
+    Check(ChangedLines(before, ReadFileBytes(s.ini())) ==
+              (std::vector<std::string>{"RotationEnabled=true", "PositionEnabled=true"}),
+          "back to full, the pair holds values");
 }
 
-void NonFiniteFloatTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
+// The legacy file is imported into a new CameraUnlock.ini and left as it was.
+void TheLegacyFileIsImportedAndLeftAsItWas() {
+    Scratch s("import");
+    const std::string legacy =
+        "[General]\r\nWorldSpaceYaw=0\r\n; my note\r\n[Hotkeys]\r\nYawModeKey=0x2E\r\n"
+        "[Rotation]\r\nYawSensitivity=1.5\r\nRemoteSmoothing=0.40\r\n[View]\r\nFovOffset=15\r\n"
+        "[Position]\r\nEnabled=0\r\nCollisionRadius=20\r\nCollisionChannel=2\r\n";
+    WriteFileBytes(s.legacy(), legacy);
+    const finch_ht::Config c = s.Load();
+    Check(!c.world_space_yaw, "WorldSpaceYaw=0 is carried");
+    Check(c.remote_smoothing == 0.4f, "RemoteSmoothing is carried");
+    Check(c.fov_offset == 15.0f, "FovOffset is carried");
+    Check(finch_ht::config::StartupTrackingMode(c) == TrackingMode::RotationOnly,
+          "[Position] Enabled=0 starts in rotation only");
+    Check(c.collision_margin == 20.0f && c.collision_channel == 2, "the sweep radius and channel are carried");
+    Check(c.collision_enabled, "the lean collision clamp takes its new default");
+    Check(c.yaw_mode_key == "Delete, Ctrl+Shift+H", "the yaw key is carried beside its chord");
+    Check(ReadFileBytes(s.legacy()) == legacy, "HeadTracking.ini keeps its bytes");
+    Check((s.Names() == std::set<std::string>{"CameraUnlock.ini", "HeadTracking.ini"}),
+          "the import creates CameraUnlock.ini and nothing else");
+    const std::string migrated = ReadFileBytes(s.ini());
+    for (const char* line :
+         {"WorldSpaceYaw=false", "RemoteSmoothing=0.4", "FovOffset=15.0", "RotationEnabled=true",
+          "PositionEnabled=false", "CollisionMargin=20.0", "CollisionChannel=2", "YawModeKey=Delete, Ctrl+Shift+H",
+          "CollisionEnabled=default", "LocalSmoothing=default", "ToggleKey=default"}) {
+        Check(Holds(migrated, line), std::string("the migrated file holds ") + line);
+    }
+    Check(migrated.find("Sensitivity") == std::string::npos, "a changed sensitivity is not carried");
 
-    // strtod parses "nan"/"inf" happily and overflows 1e400 to +inf. A NaN
-    // reaching the sensitivity multiply poisons the smoothing state
-    // permanently; a NaN FovOffset builds a degenerate projection matrix.
-    WriteIni(dir,
-        "[Rotation]\nYawSensitivity=nan\nPitchSensitivity=inf\nRollSensitivity=-inf\n"
-        "LocalSmoothing=nan\nRemoteSmoothing=1e400\n"
-        "[View]\nFovOffset=nan\n"
-        "[Position]\nSensitivityX=nan\nLimitZ=inf\n");
-
-    finch_ht::legacy::Config config;
-    finch_ht::legacy::Load(dir, config);
-
-    Check(failures, NearEqual(config.yaw_sensitivity, 1.0f)
-                 && NearEqual(config.pitch_sensitivity, 1.0f)
-                 && NearEqual(config.roll_sensitivity, 1.0f),
-          "nan and inf sensitivities fall back to 1.0");
-    Check(failures, NearEqual(config.local_smoothing, 0.0f)
-                 && NearEqual(config.remote_smoothing, 0.15f),
-          "nan and overflowed smoothing values fall back to their defaults");
-    Check(failures, NearEqual(config.fov_offset, 0.0f),
-          "a nan FovOffset falls back to 0 - ClampFov passes NaN straight through");
-    Check(failures, NearEqual(config.position_sensitivity_x, 1.0f)
-                 && NearEqual(config.limit_z, 0.40f),
-          "nan and inf position values fall back to their defaults");
+    // Once CameraUnlock.ini exists, HeadTracking.ini is not read again.
+    WriteFileBytes(s.legacy(), "[General]\r\nWorldSpaceYaw=1\r\n");
+    Check(!s.Load().world_space_yaw, "the next launch reads CameraUnlock.ini, not HeadTracking.ini");
+    Check(ReadFileBytes(s.ini()) == migrated, "the next launch writes nothing");
 }
 
-void OutOfRangeValueTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-
-    // PositionProcessor clamps with [-limit, +limit]; a negative limit inverts
-    // the bounds, so every input comes back as one edge or the other and the
-    // camera snaps between two extremes instead of following the head.
-    WriteIni(dir,
-        "[Rotation]\nYawSensitivity=1e30\nLocalSmoothing=-0.5\nRemoteSmoothing=5\n"
-        "[View]\nFovOffset=1e9\n"
-        "[Position]\nLimitX=-0.3\nLimitY=99\n");
-
-    finch_ht::legacy::Config config;
-    finch_ht::legacy::Load(dir, config);
-
-    Check(failures, config.yaw_sensitivity <= 10.0f && config.yaw_sensitivity > 0.0f,
-          "an absurd sensitivity is clamped into range");
-    Check(failures, NearEqual(config.local_smoothing, 0.0f)
-                 && NearEqual(config.remote_smoothing, 1.0f),
-          "smoothing is clamped into 0-1 at the boundary");
-    Check(failures, config.fov_offset <= 160.0f,
-          "an absurd FovOffset is clamped rather than reaching the projection matrix");
-    Check(failures, config.limit_x >= 0.0f,
-          "a negative position limit is clamped to 0 - it would invert the clamp bounds");
-    Check(failures, config.limit_y <= 5.0f, "an absurd position limit is clamped");
-
-    // A negative sensitivity is a legitimate way to invert an axis and must
-    // survive validation untouched.
-    WriteIni(dir, "[Rotation]\nYawSensitivity=-1.5\n");
-    finch_ht::legacy::Config inverted;
-    finch_ht::legacy::Load(dir, inverted);
-    Check(failures, NearEqual(inverted.yaw_sensitivity, -1.5f),
-          "a negative sensitivity still inverts the axis");
-}
-
-void YawModeKeyValidationTests(int& failures)
-{
-    const std::string dir = MakeTempDir();
-
-    // GetAsyncKeyState reports nothing outside 0x01-0xFE, so an out-of-range
-    // code leaves the yaw-mode toggle dead with nothing said about it.
-    WriteIni(dir, "[Hotkeys]\nYawModeKey=0x1FF\n");
-    finch_ht::legacy::Config tooBig;
-    finch_ht::legacy::Load(dir, tooBig);
-    Check(failures, tooBig.yaw_mode_key == 0x22,
-          "a YawModeKey above 0xFE falls back to Page Down");
-
-    WriteIni(dir, "[Hotkeys]\nYawModeKey=0\n");
-    finch_ht::legacy::Config zero;
-    finch_ht::legacy::Load(dir, zero);
-    Check(failures, zero.yaw_mode_key == 0x22, "YawModeKey=0 is not a key and falls back");
-
-    WriteIni(dir, "[Hotkeys]\nYawModeKey=0x51\n");
-    finch_ht::legacy::Config valid;
-    finch_ht::legacy::Load(dir, valid);
-    Check(failures, valid.yaw_mode_key == 0x51, "a valid virtual-key code is kept");
+// CollisionChannel has no range in the schema, since a channel is an engine's
+// own number; the mod turns the wall check off for one the engine does not have.
+void OnlyAnEngineChannelRunsTheSweep() {
+    Check(finch_ht::lean_trace::IsTraceChannel(0) && finch_ht::lean_trace::IsTraceChannel(31),
+          "channels 0 to 31 run the sweep");
+    Check(!finch_ht::lean_trace::IsTraceChannel(-1) && !finch_ht::lean_trace::IsTraceChannel(32),
+          "a channel outside 0 to 31 does not");
+    Scratch s("channel");
+    s.Load();
+    std::string bytes = ReadFileBytes(s.ini());
+    bytes.replace(bytes.find("; CollisionChannel=0"), std::strlen("; CollisionChannel=0"), "CollisionChannel=40");
+    WriteFileBytes(s.ini(), bytes);
+    Check(s.Load().collision_channel == 40, "CameraUnlock.ini takes any channel number, and the mod checks it");
 }
 
 }  // namespace
 
-int RunConfigTests()
-{
-    int failures = 0;
-    std::cout << "Config tests\n";
-    MissingFileTests(failures);
-    ParsingTests(failures);
-    CollisionChannelGuardTests(failures);
-    RetiredSmoothingKeyTests(failures);
-    WrittenDefaultsMatchCompiledDefaultsTests(failures);
-    PortValidationTests(failures);
-    NonFiniteFloatTests(failures);
-    OutOfRangeValueTests(failures);
-    YawModeKeyValidationTests(failures);
-    return finch_tests::Report("Config tests", failures);
+int main(int argc, char** argv) {
+    if (argc == 3 && std::strcmp(argv[1], "--render-config") == 0) {
+        WriteFileBytes(argv[2], Rendered());
+        return 0;
+    }
+
+    TheCommittedFileIsTheFreshRender();
+    TheCommittedFileFollowsDefaultsIni();
+    FirstLaunchCreatesTheCommittedFile();
+    ADefaultRowFollowsDefaultsIni();
+    TheYawToggleSavesItsLineAndNothingElse();
+    TheModeCycleSavesThePair();
+    TheLegacyFileIsImportedAndLeftAsItWas();
+    OnlyAnEngineChannelRunsTheSweep();
+
+    std::printf("%d checks, %d failures\n", g_checks, g_failures);
+    return g_failures == 0 ? 0 : 1;
 }

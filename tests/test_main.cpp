@@ -1,7 +1,6 @@
 #include <iostream>
 
 int RunViewInjectionTests();
-int RunConfigTests();
 int RunDiagnosticsTests();
 int RunBuildProfileTests();
 
@@ -12,7 +11,6 @@ int main()
 
     int failures = 0;
     failures += RunViewInjectionTests();
-    failures += RunConfigTests();
     failures += RunDiagnosticsTests();
     failures += RunBuildProfileTests();
 

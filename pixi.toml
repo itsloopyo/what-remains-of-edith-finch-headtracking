@@ -28,6 +28,11 @@ build-debug = { cmd = "cmake --build build --config Debug", depends-on = ["setup
 # .asi comes out of, so CI runs it too.
 test = { cmd = "ctest --test-dir build -C Release --output-on-failure", depends-on = ["build"] }
 
+# Rewrites the committed CameraUnlock.ini from the config table after a change to
+# a row, a comment or a default, then the config descriptor's per_game in
+# launcher-manifest.json. finch_config_tests fails while the two differ.
+render-config = { cmd = "build/tests/Release/finch_config_tests.exe --render-config CameraUnlock.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
+
 clean = { cmd = """
     powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
 """ }
@@ -42,6 +47,11 @@ update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-d
 # Package release ZIPs (installer + nexus). Depends on test, so no ZIP is built
 # from a tree whose tests or config differential test fail.
 package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["test"] }
+
+# Checks the newest release/*-installer.zip's launcher-manifest.json against the
+# files in the ZIP, and that neither ZIP carries CameraUnlock.ini or
+# HeadTracking.ini. Run it after package.
+validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
 
 # Build + deploy to the detected game directory (dev loop).
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1", depends-on = ["build"] }

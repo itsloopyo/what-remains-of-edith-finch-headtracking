@@ -23,8 +23,10 @@
 #include "view_injection.h"
 
 #include "cameraunlock/camera/lean_clamp.h"
+#include "cameraunlock/config/defaults_file.h"
 #include "cameraunlock/diagnostics/crash_handler.h"
 #include "cameraunlock/hooks/hook_manager.h"
+#include "cameraunlock/os/module_paths.h"
 #include "cameraunlock/time/frame_clock.h"
 #include "cameraunlock/unreal/ue_runtime.h"
 
@@ -39,6 +41,9 @@ namespace hooks = cameraunlock::hooks;
 HANDLE g_bootstrapThread = nullptr;
 
 Config g_config;
+// Whether the lean collision clamp runs: CollisionEnabled, unless the channel is
+// one the engine does not have.
+bool g_leanClampOn = false;
 
 std::unique_ptr<cameraunlock::UdpReceiver> g_receiver;
 std::unique_ptr<Session> g_session;
@@ -202,7 +207,7 @@ ue::FVector ApplyPositionOffset(const ue::FQuat4d& baseQuat, FVector4f* outLocat
 
     ue::FVector offset = PositionOffsetUE(baseQuat, offsetX, offsetY, offsetZ);
 
-    if (g_config.collision_enabled) {
+    if (g_leanClampOn) {
         // The sweep runs from where the GAME put the camera, which is the
         // clean eye - outLocation still holds it, because the offset is added
         // below rather than above.
@@ -300,14 +305,6 @@ void ApplyConfigToSession() {
     Runtime().worldSpaceYaw.store(g_config.world_space_yaw);
     Runtime().fovOffset.store(g_config.fov_offset);
 
-    cameraunlock::SensitivitySettings sens;
-    sens.yaw          = g_config.yaw_sensitivity;
-    sens.pitch        = g_config.pitch_sensitivity;
-    sens.roll         = g_config.roll_sensitivity;
-    sens.invert_yaw   = g_config.invert_yaw;
-    sens.invert_pitch = g_config.invert_pitch;
-    sens.invert_roll  = g_config.invert_roll;
-    g_session->GetProcessor().SetSensitivity(sens);
     // Both smoothing parameters cover rotation and position; the session picks
     // between them per connection from the receiver's source-address check, so
     // a switch from a local OpenTrack instance to a phone on WiFi mid-session
@@ -316,19 +313,18 @@ void ApplyConfigToSession() {
     g_session->SetRemoteSmoothing(g_config.remote_smoothing);
 
     auto& position = g_session->GetPositionProcessor().GetSettings();
-    position.sensitivity_x = g_config.position_sensitivity_x;
-    position.sensitivity_y = g_config.position_sensitivity_y;
-    position.sensitivity_z = g_config.position_sensitivity_z;
-    position.limit_x       = g_config.limit_x;
-    // The INI exposes one vertical limit, so it has to reach both sides of the
-    // clamp - the processor's is [-limit_y_down, +limit_y], and leaving the
-    // down side at its struct default silently caps a raised LimitY at 0.20m
-    // downward.
-    position.limit_y       = g_config.limit_y;
-    position.limit_y_down  = g_config.limit_y;
-    position.limit_z       = g_config.limit_z;
-    position.limit_z_back  = g_config.limit_z_back;
+    position.limit_x       = g_config.position_limit_x;
+    position.limit_y       = g_config.position_limit_y;
+    position.limit_y_down  = g_config.position_limit_y_down;
+    position.limit_z       = g_config.position_limit_z;
+    position.limit_z_back  = g_config.position_limit_z_back;
 
+    g_leanClampOn = g_config.collision_enabled;
+    if (g_leanClampOn && !lean_trace::IsTraceChannel(g_config.collision_channel)) {
+        Log::Line("config: [Position] CollisionChannel=%d is not a trace channel (0 to %d), so the "
+                  "wall check is off this session", g_config.collision_channel, lean_trace::kMaxTraceChannel);
+        g_leanClampOn = false;
+    }
     cameraunlock::camera::LeanClampSettings clamp;
     // The swept sphere's radius IS the standoff, so the clamp must not subtract
     // one of its own on top - that would hold the eye back twice.
@@ -336,24 +332,29 @@ void ApplyConfigToSession() {
     clamp.release_smoothing = g_config.collision_release_smoothing;
     g_leanClamp.SetSettings(clamp);
     g_leanClamp.Reset();
-    lean_trace::SetRadius(g_config.collision_radius);
-    lean_trace::SetChannel(g_config.collision_channel);
+    if (g_leanClampOn) {
+        lean_trace::SetRadius(g_config.collision_margin);
+        lean_trace::SetChannel(g_config.collision_channel);
+    }
 
-    g_session->SetMode(g_config.position_enabled
-        ? TrackingMode::RotationAndPosition
-        : TrackingMode::RotationOnly);
+    g_session->SetMode(config::StartupTrackingMode(g_config));
 }
 
 void LoadAndLogConfig() {
-    const std::string exeDir = ExeDirectoryNarrow();
-    WriteDefaultConfigIfMissing(exeDir);
-    LoadConfig(exeDir, g_config);
-    Log::Line("config: udp_port=%d enable=%d yaw_sens=%.2f local_smoothing=%.2f remote_smoothing=%.2f position=%d yaw_mode=%s yaw_mode_key=0x%02X fov_offset=%+.2f",
+    const std::wstring exeDir = cameraunlock::os::HostExeDirectory();
+    if (exeDir.empty()) {
+        Log::Line("config: the game's folder could not be read, so CameraUnlock.ini cannot be "
+                  "read or written - using the built-in settings, and nothing is saved");
+        g_config = config::Table().defaults();
+    } else {
+        g_config = config::Load(exeDir, cameraunlock::config::DefaultsFile::PerUser());
+    }
+    Log::Line("config: udp_port=%d enable=%d local_smoothing=%.2f remote_smoothing=%.2f rotation=%d position=%d yaw_mode=%s fov_offset=%+.2f collision=%d",
         g_config.udp_port, g_config.enable_on_startup ? 1 : 0,
-        g_config.yaw_sensitivity, g_config.local_smoothing, g_config.remote_smoothing,
-        g_config.position_enabled ? 1 : 0,
-        g_config.world_space_yaw ? "world" : "local", g_config.yaw_mode_key,
-        g_config.fov_offset);
+        g_config.local_smoothing, g_config.remote_smoothing,
+        g_config.rotation_enabled ? 1 : 0, g_config.position_enabled ? 1 : 0,
+        g_config.world_space_yaw ? "world" : "local",
+        g_config.fov_offset, g_config.collision_enabled ? 1 : 0);
 }
 
 // False = this build is not one the mod knows how to touch. The caller must
@@ -482,10 +483,8 @@ DWORD WINAPI BootstrapThread(LPVOID) {
 
     if (!InstallViewPointHook()) return 0;
 
-    g_hotkeys = StartHotkeys(*g_session, g_config.yaw_mode_key);
-    Log::Line("init complete. End=toggle PageUp=cycle tracking mode "
-              "PageDown=yawmode (chords Ctrl+Shift+Y/G/H). Waiting for OpenTrack on UDP %d.",
-        g_config.udp_port);
+    g_hotkeys = StartHotkeys(*g_session, g_config);
+    Log::Line("init complete. Waiting for OpenTrack on UDP %d.", g_config.udp_port);
     return 0;
 }
 

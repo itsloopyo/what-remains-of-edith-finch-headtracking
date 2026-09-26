@@ -58,17 +58,14 @@ void HexBytesTests(int& failures)
 
 void DirectoryOfTests(int& failures)
 {
-    Check(failures, finch_ht::DirectoryOf(std::string("C:\\Games\\Finch\\FinchGame.exe"))
-            == "C:\\Games\\Finch",
-          "the EXE directory drops the file name");
-    Check(failures, finch_ht::DirectoryOf(std::string("C:/Games/Finch/FinchGame.exe"))
-            == "C:/Games/Finch",
-          "forward slashes separate too");
-    Check(failures, finch_ht::DirectoryOf(std::string("FinchGame.exe")) == ".",
-          "a bare file name resolves to the current directory");
     Check(failures, finch_ht::DirectoryOf(std::wstring(L"C:\\Games\\Finch\\FinchGame.exe"))
             == L"C:\\Games\\Finch",
-          "the wide overload behaves identically");
+          "the EXE directory drops the file name");
+    Check(failures, finch_ht::DirectoryOf(std::wstring(L"C:/Games/Finch/FinchGame.exe"))
+            == L"C:/Games/Finch",
+          "forward slashes separate too");
+    Check(failures, finch_ht::DirectoryOf(std::wstring(L"FinchGame.exe")) == L".",
+          "a bare file name resolves to the current directory");
 }
 
 // The gate that stands between a per-build RVA and a dereference. Without it a
