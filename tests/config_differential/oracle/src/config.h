@@ -64,10 +64,10 @@ struct Config {
 };
 
 // Both take the directory holding the game EXE; the INI sits beside it.
-// LoadConfig reads the file through the frozen reader in src/legacy_config/,
-// from that reader's defaults, which are the ones above, and copies the result
-// into `out`, so nothing here is ever NaN, infinite, or outside the range its
-// consumer can take.
+// Keys absent from the file keep the defaults above, so a partial INI is valid.
+// LoadConfig validates every value it reads: a key that is out of range or not
+// a number keeps its default and the substitution is logged, so nothing here is
+// ever NaN, infinite, or outside the range its consumer can take.
 void LoadConfig(const std::string& exeDir, Config& out);
 void WriteDefaultConfigIfMissing(const std::string& exeDir);
 

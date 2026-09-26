@@ -1,9 +1,10 @@
-// Characterization tests for the INI contract: the keys the mod reads, the
-// defaults it falls back to, and the agreement between the file it writes on
-// first run and the defaults compiled into Config. A key renamed on one side
-// only would otherwise ship as a setting that silently does nothing.
+// Characterization tests for the INI contract: the keys the frozen reader
+// reads, the defaults it falls back to, and the agreement between the file the
+// mod writes on first run and the defaults compiled into Config. A key renamed
+// on one side only would otherwise ship as a setting that silently does nothing.
 
 #include "config.h"
+#include "legacy_config/legacy_config.h"
 
 #include <cstdio>
 #include <string>
@@ -40,8 +41,8 @@ void MissingFileTests(int& failures)
 {
     const std::string dir = MakeTempDir();
 
-    finch_ht::Config config;
-    finch_ht::LoadConfig(dir, config);
+    finch_ht::legacy::Config config;
+    finch_ht::legacy::Load(dir, config);
 
     Check(failures, config.udp_port == 4242, "a missing INI leaves the OpenTrack port at 4242");
     Check(failures, config.enable_on_startup, "a missing INI leaves tracking enabled on startup");
@@ -73,27 +74,27 @@ void CollisionChannelGuardTests(int& failures)
     {
         const std::string dir = MakeTempDir();
         WriteIni(dir, "[Position]\nCollisionChannel=999\n");
-        finch_ht::Config config;
+        finch_ht::legacy::Config config;
         config.collision_channel = 1;
-        finch_ht::LoadConfig(dir, config);
+        finch_ht::legacy::Load(dir, config);
         Check(failures, config.collision_channel == 1,
               "an out-of-range CollisionChannel keeps the value it had");
     }
     {
         const std::string dir = MakeTempDir();
         WriteIni(dir, "[Position]\nCollisionChannel=-3\n");
-        finch_ht::Config config;
+        finch_ht::legacy::Config config;
         config.collision_channel = 1;
-        finch_ht::LoadConfig(dir, config);
+        finch_ht::legacy::Load(dir, config);
         Check(failures, config.collision_channel == 1,
               "a negative CollisionChannel keeps the value it had");
     }
     {
         const std::string dir = MakeTempDir();
         WriteIni(dir, "[Position]\nCollisionChannel=0\n");
-        finch_ht::Config config;
+        finch_ht::legacy::Config config;
         config.collision_channel = 1;
-        finch_ht::LoadConfig(dir, config);
+        finch_ht::legacy::Load(dir, config);
         Check(failures, config.collision_channel == 0,
               "channel 0 is a real channel and is kept, not treated as a parse failure");
     }
@@ -115,8 +116,8 @@ void ParsingTests(int& failures)
         "CollisionEnabled=1\nCollisionRadius=14.0\nCollisionChannel=2\n"
         "CollisionReleaseSmoothing=0.4\n");
 
-    finch_ht::Config config;
-    finch_ht::LoadConfig(dir, config);
+    finch_ht::legacy::Config config;
+    finch_ht::legacy::Load(dir, config);
 
     Check(failures, config.udp_port == 5252, "UdpPort is read from [Network]");
     Check(failures, !config.enable_on_startup && !config.world_space_yaw,
@@ -152,8 +153,8 @@ void RetiredSmoothingKeyTests(int& failures)
     const std::string dir = MakeTempDir();
     WriteIni(dir, "[Rotation]\nSmoothing=0.9\n");
 
-    finch_ht::Config config;
-    finch_ht::LoadConfig(dir, config);
+    finch_ht::legacy::Config config;
+    finch_ht::legacy::Load(dir, config);
 
     Check(failures, NearEqual(config.local_smoothing, 0.0f)
                  && NearEqual(config.remote_smoothing, 0.15f),
@@ -202,7 +203,7 @@ void WrittenDefaultsMatchCompiledDefaultsTests(int& failures)
           "an existing INI is never overwritten");
 }
 
-// Nothing downstream of LoadConfig rejects a bad value, so the INI is the only
+// Nothing downstream of the reader rejects a bad value, so the INI is the only
 // place a hostile or fat-fingered number can be stopped. Each case below has a
 // failure mode that reaches the player with no diagnostic: a port that binds
 // somewhere the tracker never reaches, a NaN that poisons the pose pipeline for
@@ -214,32 +215,32 @@ void PortValidationTests(int& failures)
     // GetPrivateProfileIntA yields 0 - not the default - for text it cannot
     // parse, and bind(0) succeeds on an OS-assigned ephemeral port.
     WriteIni(dir, "[Network]\nUdpPort=not-a-number\n");
-    finch_ht::Config garbage;
-    finch_ht::LoadConfig(dir, garbage);
+    finch_ht::legacy::Config garbage;
+    finch_ht::legacy::Load(dir, garbage);
     Check(failures, garbage.udp_port == 4242,
           "a non-numeric UdpPort falls back to 4242 instead of binding port 0");
 
     // 70000 & 0xFFFF == 4464: a raw cast to uint16_t would bind a wrong port.
     WriteIni(dir, "[Network]\nUdpPort=70000\n");
-    finch_ht::Config tooBig;
-    finch_ht::LoadConfig(dir, tooBig);
+    finch_ht::legacy::Config tooBig;
+    finch_ht::legacy::Load(dir, tooBig);
     Check(failures, tooBig.udp_port == 4242,
           "a UdpPort above 65535 falls back rather than truncating to 4464");
 
     WriteIni(dir, "[Network]\nUdpPort=-1\n");
-    finch_ht::Config negative;
-    finch_ht::LoadConfig(dir, negative);
+    finch_ht::legacy::Config negative;
+    finch_ht::legacy::Load(dir, negative);
     Check(failures, negative.udp_port == 4242, "a negative UdpPort falls back");
 
     WriteIni(dir, "[Network]\nUdpPort=80\n");
-    finch_ht::Config privileged;
-    finch_ht::LoadConfig(dir, privileged);
+    finch_ht::legacy::Config privileged;
+    finch_ht::legacy::Load(dir, privileged);
     Check(failures, privileged.udp_port == 4242,
           "a port below the OpenTrack 1024 floor falls back");
 
     WriteIni(dir, "[Network]\nUdpPort=65535\n");
-    finch_ht::Config edge;
-    finch_ht::LoadConfig(dir, edge);
+    finch_ht::legacy::Config edge;
+    finch_ht::legacy::Load(dir, edge);
     Check(failures, edge.udp_port == 65535, "the top of the valid range is accepted");
 }
 
@@ -256,8 +257,8 @@ void NonFiniteFloatTests(int& failures)
         "[View]\nFovOffset=nan\n"
         "[Position]\nSensitivityX=nan\nLimitZ=inf\n");
 
-    finch_ht::Config config;
-    finch_ht::LoadConfig(dir, config);
+    finch_ht::legacy::Config config;
+    finch_ht::legacy::Load(dir, config);
 
     Check(failures, NearEqual(config.yaw_sensitivity, 1.0f)
                  && NearEqual(config.pitch_sensitivity, 1.0f)
@@ -285,8 +286,8 @@ void OutOfRangeValueTests(int& failures)
         "[View]\nFovOffset=1e9\n"
         "[Position]\nLimitX=-0.3\nLimitY=99\n");
 
-    finch_ht::Config config;
-    finch_ht::LoadConfig(dir, config);
+    finch_ht::legacy::Config config;
+    finch_ht::legacy::Load(dir, config);
 
     Check(failures, config.yaw_sensitivity <= 10.0f && config.yaw_sensitivity > 0.0f,
           "an absurd sensitivity is clamped into range");
@@ -302,8 +303,8 @@ void OutOfRangeValueTests(int& failures)
     // A negative sensitivity is a legitimate way to invert an axis and must
     // survive validation untouched.
     WriteIni(dir, "[Rotation]\nYawSensitivity=-1.5\n");
-    finch_ht::Config inverted;
-    finch_ht::LoadConfig(dir, inverted);
+    finch_ht::legacy::Config inverted;
+    finch_ht::legacy::Load(dir, inverted);
     Check(failures, NearEqual(inverted.yaw_sensitivity, -1.5f),
           "a negative sensitivity still inverts the axis");
 }
@@ -315,19 +316,19 @@ void YawModeKeyValidationTests(int& failures)
     // GetAsyncKeyState reports nothing outside 0x01-0xFE, so an out-of-range
     // code leaves the yaw-mode toggle dead with nothing said about it.
     WriteIni(dir, "[Hotkeys]\nYawModeKey=0x1FF\n");
-    finch_ht::Config tooBig;
-    finch_ht::LoadConfig(dir, tooBig);
+    finch_ht::legacy::Config tooBig;
+    finch_ht::legacy::Load(dir, tooBig);
     Check(failures, tooBig.yaw_mode_key == 0x22,
           "a YawModeKey above 0xFE falls back to Page Down");
 
     WriteIni(dir, "[Hotkeys]\nYawModeKey=0\n");
-    finch_ht::Config zero;
-    finch_ht::LoadConfig(dir, zero);
+    finch_ht::legacy::Config zero;
+    finch_ht::legacy::Load(dir, zero);
     Check(failures, zero.yaw_mode_key == 0x22, "YawModeKey=0 is not a key and falls back");
 
     WriteIni(dir, "[Hotkeys]\nYawModeKey=0x51\n");
-    finch_ht::Config valid;
-    finch_ht::LoadConfig(dir, valid);
+    finch_ht::legacy::Config valid;
+    finch_ht::legacy::Load(dir, valid);
     Check(failures, valid.yaw_mode_key == 0x51, "a valid virtual-key code is kept");
 }
 

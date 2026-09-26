@@ -1,0 +1,168 @@
+// Frozen. See legacy_config.h.
+
+#include "legacy_config.h"
+
+#include "cameraunlock/config/ini_reader.h"
+#include "cameraunlock/math/finite_utils.h"
+#include "cameraunlock/protocol/port_utils.h"
+
+#include "logging.h"
+
+namespace finch_ht::legacy {
+
+namespace {
+
+const char* kIniName = "HeadTracking.ini";
+
+// Bounds for the INI numbers. Deliberately far wider than anything a user
+// would choose - they exist to stop a typo reaching the maths, not to
+// second-guess a setting. A negative sensitivity inverts the axis, which is a
+// legitimate thing to want, so those ranges stay symmetric.
+constexpr float kMaxSensitivity = 10.0f;
+constexpr float kMaxPositionLimit = 5.0f;   // metres
+constexpr float kMaxFovOffset = 160.0f;     // ClampFov bounds the result to [10, 170]
+// ETraceTypeQuery is a TEnumAsByte over a project's declared trace channels;
+// UE4 has room for 18 custom ones on top of the two built in, and nothing near
+// that many is ever declared. Wide enough to try every real channel, narrow
+// enough that a typo cannot run the engine's converter off its table.
+constexpr int kMaxTraceChannel = 31;
+
+// Nothing downstream of the INI rejects a bad float. strtod accepts "nan" and
+// "inf" and overflows a literal like 1e400 to +inf; a NaN sensitivity then
+// poisons the smoothing state for the rest of the session, and a NaN FovOffset
+// builds a degenerate projection matrix. Both present as the view simply being
+// gone, so the substitution is logged with the key that caused it instead of
+// being applied quietly.
+float ReadFloatChecked(const cameraunlock::IniReader& reader, const char* section,
+                       const char* key, float fallback, float lo, float hi) {
+    const float raw = reader.ReadFloat(section, key, fallback);
+    const float value = cameraunlock::math::SanitizeFinite(raw, fallback, lo, hi);
+    if (value != raw)
+        Log::Line("WARNING: config [%s] %s = %g is not a number in [%g, %g] - using %g.",
+            section, key, static_cast<double>(raw), static_cast<double>(lo),
+            static_cast<double>(hi), static_cast<double>(value));
+    return value;
+}
+
+// Warned once per process rather than once per load: config is reloadable, and
+// repeating this on every reload buries it.
+//
+// The old value is deliberately NOT migrated into the new keys. The single
+// Smoothing value carried a hidden 0.15 floor, so the number in an existing
+// config does not mean what it used to: copying it across would hand a local
+// user smoothing they never chose under the new semantics, and copying it into
+// only one of the two keys would be a guess about which connection they were on.
+void WarnRetiredSmoothingKey(const cameraunlock::IniReader& reader,
+                             const char* section, const char* key) {
+    static bool warned = false;
+    if (warned) return;
+    if (reader.ReadString(section, key, "").empty()) return;
+    warned = true;
+    Log::Line(
+        "WARNING: Config key [%s] %s has been retired and is IGNORED. Smoothing is "
+        "now two keys: LocalSmoothing (default 0, applies to a tracker on this "
+        "machine) and RemoteSmoothing (default 0.15, applies to a tracker on the "
+        "network). The old value is not migrated because the semantics changed - it "
+        "carried a hidden 0.15 floor that no longer exists. Set the two new keys.",
+        section, key);
+}
+
+std::string ini_path(const std::string& exe_dir) {
+    return exe_dir + "\\" + kIniName;
+}
+
+}  // namespace
+
+void Load(const std::string& exeDir, Config& out) {
+    cameraunlock::IniReader ini;
+    if (!ini.Open(ini_path(exeDir))) return;
+
+    // ReadInt yields 0 for a present-but-non-numeric value rather than the
+    // default (see ini_reader.h rule 4), and a raw cast to uint16_t turns 70000
+    // into port 4464. Either one binds a socket the tracker never reaches, and
+    // both look exactly like "head tracking just doesn't work" from the game.
+    const int rawPort = ini.ReadInt("Network", "UdpPort", out.udp_port);
+    bool portValid = false;
+    const std::uint16_t port = cameraunlock::NormalizeUdpPort(
+        rawPort, static_cast<std::uint16_t>(out.udp_port), portValid);
+    if (!portValid)
+        Log::Line("WARNING: config [Network] UdpPort = %d is not in 1024-65535 (a "
+                  "non-numeric value reads as 0) - using %u.", rawPort, port);
+    out.udp_port = port;
+
+    out.enable_on_startup  = ini.ReadBool ("General",  "EnableOnStartup",  out.enable_on_startup);
+    out.world_space_yaw    = ini.ReadBool ("General",  "WorldSpaceYaw",    out.world_space_yaw);
+
+    // GetAsyncKeyState reports nothing for a code outside 0x01-0xFE, so an
+    // out-of-range key would leave the yaw toggle silently dead.
+    const int rawYawKey = ini.ReadHex("Hotkeys", "YawModeKey", out.yaw_mode_key);
+    if (rawYawKey >= 0x01 && rawYawKey <= 0xFE)
+        out.yaw_mode_key = rawYawKey;
+    else
+        Log::Line("WARNING: config [Hotkeys] YawModeKey = 0x%X is not a virtual-key "
+                  "code (0x01-0xFE) - using 0x%02X.", rawYawKey, out.yaw_mode_key);
+
+    out.yaw_sensitivity    = ReadFloatChecked(ini, "Rotation", "YawSensitivity",
+                                              out.yaw_sensitivity, -kMaxSensitivity, kMaxSensitivity);
+    out.pitch_sensitivity  = ReadFloatChecked(ini, "Rotation", "PitchSensitivity",
+                                              out.pitch_sensitivity, -kMaxSensitivity, kMaxSensitivity);
+    out.roll_sensitivity   = ReadFloatChecked(ini, "Rotation", "RollSensitivity",
+                                              out.roll_sensitivity, -kMaxSensitivity, kMaxSensitivity);
+    out.invert_yaw         = ini.ReadBool ("Rotation", "InvertYaw",        out.invert_yaw);
+    out.invert_pitch       = ini.ReadBool ("Rotation", "InvertPitch",      out.invert_pitch);
+    out.invert_roll        = ini.ReadBool ("Rotation", "InvertRoll",       out.invert_roll);
+
+    out.local_smoothing    = ReadFloatChecked(ini, "Rotation", "LocalSmoothing",
+                                              out.local_smoothing, 0.0f, 1.0f);
+    out.remote_smoothing   = ReadFloatChecked(ini, "Rotation", "RemoteSmoothing",
+                                              out.remote_smoothing, 0.0f, 1.0f);
+    WarnRetiredSmoothingKey(ini, "Rotation", "Smoothing");
+
+    out.fov_offset         = ReadFloatChecked(ini, "View", "FovOffset",
+                                              out.fov_offset, -kMaxFovOffset, kMaxFovOffset);
+
+    out.position_enabled   = ini.ReadBool ("Position", "Enabled",          out.position_enabled);
+    out.position_sensitivity_x = ReadFloatChecked(ini, "Position", "SensitivityX",
+                                                  out.position_sensitivity_x,
+                                                  -kMaxSensitivity, kMaxSensitivity);
+    out.position_sensitivity_y = ReadFloatChecked(ini, "Position", "SensitivityY",
+                                                  out.position_sensitivity_y,
+                                                  -kMaxSensitivity, kMaxSensitivity);
+    out.position_sensitivity_z = ReadFloatChecked(ini, "Position", "SensitivityZ",
+                                                  out.position_sensitivity_z,
+                                                  -kMaxSensitivity, kMaxSensitivity);
+    // PositionProcessor clamps each axis with [-limit, +limit], so a negative
+    // limit inverts the bounds and every input comes back as one edge or the
+    // other - the camera snaps between two extremes instead of following the
+    // head. Zero is legitimate (that axis stops moving), negative never is.
+    out.limit_x            = ReadFloatChecked(ini, "Position", "LimitX",
+                                              out.limit_x, 0.0f, kMaxPositionLimit);
+    out.limit_y            = ReadFloatChecked(ini, "Position", "LimitY",
+                                              out.limit_y, 0.0f, kMaxPositionLimit);
+    out.limit_z            = ReadFloatChecked(ini, "Position", "LimitZ",
+                                              out.limit_z, 0.0f, kMaxPositionLimit);
+    out.limit_z_back       = ReadFloatChecked(ini, "Position", "LimitZBack",
+                                              out.limit_z_back, 0.0f, kMaxPositionLimit);
+    out.collision_enabled  = ini.ReadBool ("Position", "CollisionEnabled",  out.collision_enabled);
+    out.collision_radius   = ReadFloatChecked(ini, "Position", "CollisionRadius",
+                                              out.collision_radius, 1.0f, 100.0f);
+    // This one is handed to the engine's ETraceTypeQuery -> ECollisionChannel
+    // conversion, which indexes a table, so an out-of-range value is a read off
+    // the end of it rather than a trace that finds nothing. ReadInt also yields
+    // 0 rather than the default for a non-numeric value (ini_reader.h rule 4),
+    // and 0 is a legitimate channel, so the raw value is range-checked here
+    // rather than trusted.
+    const int rawChannel = ini.ReadInt("Position", "CollisionChannel", out.collision_channel);
+    if (rawChannel < 0 || rawChannel > kMaxTraceChannel) {
+        Log::Line("WARNING: config [Position] CollisionChannel = %d is not in 0-%d (a "
+                  "non-numeric value reads as 0) - using %d.",
+                  rawChannel, kMaxTraceChannel, out.collision_channel);
+    } else {
+        out.collision_channel = rawChannel;
+    }
+    out.collision_release_smoothing = ReadFloatChecked(ini, "Position", "CollisionReleaseSmoothing",
+                                                       out.collision_release_smoothing, 0.0f, 1.0f);
+    WarnRetiredSmoothingKey(ini, "Position", "Smoothing");
+}
+
+}  // namespace finch_ht::legacy

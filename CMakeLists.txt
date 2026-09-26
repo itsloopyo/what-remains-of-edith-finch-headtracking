@@ -59,6 +59,7 @@ set(MOD_SOURCES
     src/fov_override.cpp
     src/hotkeys.cpp
     src/lean_trace.cpp
+    src/legacy_config/legacy_config.cpp
     src/steamstub.cpp
     src/builds/build_registry.cpp
     src/builds/steam_offsets.cpp
