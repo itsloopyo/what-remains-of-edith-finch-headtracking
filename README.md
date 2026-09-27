@@ -2,14 +2,13 @@
 
 ![What Remains of Edith Finch running with this mod](https://raw.githubusercontent.com/itsloopyo/what-remains-of-edith-finch-headtracking/main/assets/readme-clip.gif)
 
-An unofficial head tracking mod for What Remains of Edith Finch that moves the view with your head while your mouse or controller keeps control of look and interaction, driven by OpenTrack over UDP, with no VR headset required.
+An unofficial head tracking mod for What Remains of Edith Finch that moves the view with your head while your mouse or controller keeps control of look and interaction, driven by a webcam, phone, or any OpenTrack compatible tracker, with no VR headset required.
 
 ## Features
 
 - **Decoupled look and aim** - head tracking moves what you see; the mouse or controller still drives where the game thinks you are looking, so interaction prompts and line traces are unchanged.
 - **6DOF positional tracking** - lean, peek, and move closer to look around the scene.
 - **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
-- **Field of view control** - the game ships no FOV setting, so the mod adds one.
 
 ## Requirements
 
@@ -136,25 +135,11 @@ Each hotkey in `CameraUnlock.ini` is a list of keys, the chord included (`Toggle
 <!-- cameraunlock:config -->
 The mod reads its settings from `FinchGame\Binaries\Win64\CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
 
-A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it, and neither do earlier versions of this mod. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
 
 `Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
 
 When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
-
-Earlier versions of the mod kept these settings in `HeadTracking.ini`, in the same folder. The first time this version starts and finds no `CameraUnlock.ini`, it reads your settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It never changes `HeadTracking.ini`, and does not read it again while `CameraUnlock.ini` exists.
-
-A setting that the defaults below set to `default` is written as `default` when the value imported for it equals its default at that start, which is the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none. It then follows `Defaults.ini`. Every other setting is written with the value imported for it. `RotationEnabled` and `PositionEnabled` are one setting here, the tracking mode, so both are written as `default` or neither is.
-
-Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
-
-- Reticle settings, and a key that toggled the reticle.
-- A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
-- The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
-
-An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
-
-Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults below. Every setting they set to `default` then follows `Defaults.ini`.
 
 The built-in value of each setting set to `default` below:
 
@@ -283,11 +268,9 @@ FovOffset=0.0
 
 Download the new release and run `install.cmd` again. The install carries no config file, so `CameraUnlock.ini` keeps your settings.
 
-Versions after 1.1.1 keep the settings in `CameraUnlock.ini`, not `HeadTracking.ini`. The first start after updating from an earlier version carries your `HeadTracking.ini` settings over and leaves that file as it was; [Configuration](#configuration) has the details.
-
 ## Uninstalling
 
-Run `uninstall.cmd`. This removes the mod files and leaves `CameraUnlock.ini` and `HeadTracking.ini` in place, so a reinstall keeps your settings. The ASI loader is only removed if the installer put it there. Use `uninstall.cmd /force` to remove it anyway.
+Run `uninstall.cmd`. This removes the mod files and leaves `CameraUnlock.ini` in place, so a reinstall keeps your settings. The ASI loader is only removed if the installer put it there. Use `uninstall.cmd /force` to remove it anyway.
 
 ## Building from Source
 
