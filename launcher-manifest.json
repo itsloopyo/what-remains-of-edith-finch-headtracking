@@ -21,5 +21,13 @@
   ],
 
   "runtime_requirements": [],
-  "dependencies": []
+  "dependencies": [],
+
+  "config": {
+    "path": "FinchGame/Binaries/Win64/CameraUnlock.ini",
+    "anchor": "game_root",
+    "legacy_source": "FinchGame/Binaries/Win64/HeadTracking.ini",
+    "canonical_since": "1.2.0",
+    "per_game": {}
+  }
 }
