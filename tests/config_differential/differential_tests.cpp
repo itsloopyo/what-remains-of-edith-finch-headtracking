@@ -28,15 +28,27 @@
 //                    held. This also moves the default, so no file and a file
 //                    without the key start with the clamp on.
 //
+//   N3               a yaw key on Ctrl, Shift or Alt alone imports as unbound,
+//                    and the Ctrl+Shift+H chord stays.
+//
 // The reader clamps every float into a range inside the concept's, replaces a
-// value that is not finite, and keeps the yaw key inside 0x01-0xFE, so neither
-// normalisation can apply.
+// value that is not finite, and keeps the yaw key inside 0x01-0xFE, so N1 and N2
+// cannot apply.
+//
+// A row the player never changed from what v1.1.1 shipped follows Defaults.ini:
+// the import lists it in follows_defaults_ini and the migration writes it
+// `default`, the tracking mode pair as one unit. The test derives that list from
+// what the published build ran on, a row whose every observed value is v1.1.1's
+// default, and holds the import's list to it on every input. The first-run file,
+// the empty file and no file list every row and migrate to the committed file
+// byte for byte.
 //
 // Each input migrates three times: over a Defaults.ini the owner creates with the
 // built-in values, from a read-only HeadTracking.ini, and over a Defaults.ini
-// that differs from the built-in value on every global row. All three give the
-// settings the import read, since the migration writes `default` only where the
-// imported value is what `default` gives at that launch.
+// that differs from the built-in value on every global row. Over the first two
+// the session runs as the import read, since v1.1.1's defaults are the built-in
+// values. Over the third a row the player never changed is `default` and takes
+// Defaults.ini's value, and a changed row keeps the player's.
 //
 // Inputs: the published build's first-run file (no build shipped or seeded a
 // config, so every player's file started as that one), no file, an empty file,
@@ -76,6 +88,7 @@ namespace {
 
 using cameraunlock::TrackingMode;
 namespace cfg = cameraunlock::config;
+using cfg::schema::Concept;
 namespace fs = std::filesystem;
 namespace testing = cameraunlock::config::testing;
 
@@ -558,8 +571,124 @@ Allowed ApplyApprovedChanges(const finch_ht::legacy::Config& read) {
     shaping(read.position_sensitivity_z, 1.0f, o.position_sensitivity_z, "Position", "SensitivityZ");
     if (!read.collision_enabled) a.dropped.push_back({cfg::DropRule::FollowsDefault, "Position", "CollisionEnabled"});
     o.collision_enabled = true;
+    const int k = read.yaw_mode_key;
+    if ((k >= 0x10 && k <= 0x12) || (k >= 0xA0 && k <= 0xA5)) {
+        a.dropped.push_back({cfg::DropRule::ModifierKey, "Hotkeys", "YawModeKey"});
+        o.hotkeys.erase(std::find(o.hotkeys.begin(), o.hotkeys.end(), Hotkey{kYawMode, k, kPlain}));
+    }
     std::sort(a.dropped.begin(), a.dropped.end());
     return a;
+}
+
+// ---- Rows that follow Defaults.ini ---------------------------------------------
+//
+// Every row the table binds that follows Defaults.ini: the global concepts,
+// less CollisionMargin and CollisionChannel, which every game keeps for itself.
+const std::set<Concept>& AllRows() {
+    static const std::set<Concept> all = {
+        Concept::UdpPort,           Concept::EnableOnStartup,    Concept::WorldSpaceYaw,
+        Concept::RotationEnabled,   Concept::PositionEnabled,    Concept::LocalSmoothing,
+        Concept::RemoteSmoothing,   Concept::PositionLimitX,     Concept::PositionLimitY,
+        Concept::PositionLimitYDown, Concept::PositionLimitZ,    Concept::PositionLimitZBack,
+        Concept::CollisionEnabled,  Concept::CollisionReleaseSmoothing, Concept::ToggleKey,
+        Concept::CycleTrackingModeKey, Concept::YawModeKey,
+    };
+    return all;
+}
+
+std::vector<Hotkey> KeysOf(const Observed& o, int action) {
+    std::vector<Hotkey> keys;
+    for (const Hotkey& h : o.hotkeys) {
+        if (std::get<0>(h) == action) keys.push_back(h);
+    }
+    return keys;
+}
+
+// The rows on which two readings differ; the mode pair is both rows or neither.
+// Pose shaping has no row.
+std::set<Concept> RowsThatDiffer(const Observed& a, const Observed& b) {
+    std::set<Concept> rows;
+    const auto flt = [&rows](float x, float y, Concept row) {
+        if (Bits(x) != Bits(y)) rows.insert(row);
+    };
+    if (a.udp_port != b.udp_port) rows.insert(Concept::UdpPort);
+    if (a.start_enabled != b.start_enabled) rows.insert(Concept::EnableOnStartup);
+    if (a.start_world_yaw != b.start_world_yaw) rows.insert(Concept::WorldSpaceYaw);
+    if (a.start_mode != b.start_mode) rows.insert({Concept::RotationEnabled, Concept::PositionEnabled});
+    flt(a.local_smoothing, b.local_smoothing, Concept::LocalSmoothing);
+    flt(a.remote_smoothing, b.remote_smoothing, Concept::RemoteSmoothing);
+    flt(a.limit_x, b.limit_x, Concept::PositionLimitX);
+    flt(a.limit_y, b.limit_y, Concept::PositionLimitY);
+    flt(a.limit_y_down, b.limit_y_down, Concept::PositionLimitYDown);
+    flt(a.limit_z, b.limit_z, Concept::PositionLimitZ);
+    flt(a.limit_z_back, b.limit_z_back, Concept::PositionLimitZBack);
+    if (a.collision_enabled != b.collision_enabled) rows.insert(Concept::CollisionEnabled);
+    flt(a.collision_release_smoothing, b.collision_release_smoothing, Concept::CollisionReleaseSmoothing);
+    if (KeysOf(a, kToggle) != KeysOf(b, kToggle)) rows.insert(Concept::ToggleKey);
+    if (KeysOf(a, kCycleMode) != KeysOf(b, kCycleMode)) rows.insert(Concept::CycleTrackingModeKey);
+    if (KeysOf(a, kYawMode) != KeysOf(b, kYawMode)) rows.insert(Concept::YawModeKey);
+    return rows;
+}
+
+// The rows the player never changed: the published build ran on v1.1.1's
+// default for each.
+std::set<Concept> UntouchedRows(const finch_ht::legacy::Config& read) {
+    const std::set<Concept> changed =
+        RowsThatDiffer(ObservePublished(read), ObservePublished(finch_ht::legacy::Config{}));
+    std::set<Concept> untouched;
+    for (const Concept row : AllRows()) {
+        if (!changed.count(row)) untouched.insert(row);
+    }
+    return untouched;
+}
+
+std::string Names(const std::set<Concept>& rows) {
+    std::string text;
+    for (const Concept row : rows) {
+        text += (text.empty() ? "" : ", ") + std::string(cfg::schema::kConcepts[static_cast<std::size_t>(row)].name);
+    }
+    return text.empty() ? "none" : text;
+}
+
+// What the session runs on over a Defaults.ini other than the built-in one:
+// `want`, with each row in `follows` as `defaults_ini` gives it.
+Observed OverDefaults(Observed want, const std::set<Concept>& follows, const Observed& defaults_ini) {
+    const auto take = [&follows](Concept row) { return follows.count(row) != 0; };
+    const Observed& d = defaults_ini;
+    if (take(Concept::RotationEnabled) != take(Concept::PositionEnabled)) {
+        throw std::logic_error("follows_defaults_ini names one half of the tracking mode");
+    }
+    if (take(Concept::UdpPort)) want.udp_port = d.udp_port;
+    if (take(Concept::EnableOnStartup)) want.start_enabled = d.start_enabled;
+    if (take(Concept::WorldSpaceYaw)) want.start_world_yaw = d.start_world_yaw;
+    if (take(Concept::RotationEnabled)) want.start_mode = d.start_mode;
+    if (take(Concept::LocalSmoothing)) want.local_smoothing = d.local_smoothing;
+    if (take(Concept::RemoteSmoothing)) want.remote_smoothing = d.remote_smoothing;
+    if (take(Concept::PositionLimitX)) want.limit_x = d.limit_x;
+    if (take(Concept::PositionLimitY)) want.limit_y = d.limit_y;
+    if (take(Concept::PositionLimitYDown)) want.limit_y_down = d.limit_y_down;
+    if (take(Concept::PositionLimitZ)) want.limit_z = d.limit_z;
+    if (take(Concept::PositionLimitZBack)) want.limit_z_back = d.limit_z_back;
+    if (take(Concept::CollisionEnabled)) want.collision_enabled = d.collision_enabled;
+    if (take(Concept::CollisionReleaseSmoothing)) want.collision_release_smoothing = d.collision_release_smoothing;
+    const std::pair<Concept, int> lists[] = {
+        {Concept::ToggleKey, kToggle}, {Concept::CycleTrackingModeKey, kCycleMode}, {Concept::YawModeKey, kYawMode}};
+    for (const auto& [row, action] : lists) {
+        if (!take(row)) continue;
+        std::vector<Hotkey> keys;
+        for (const Hotkey& h : want.hotkeys) {
+            if (std::get<0>(h) != action) keys.push_back(h);
+        }
+        for (const Hotkey& h : KeysOf(d, action)) keys.push_back(h);
+        std::sort(keys.begin(), keys.end());
+        want.hotkeys = keys;
+    }
+    return want;
+}
+
+// The inputs a player cannot have changed anything in.
+bool IsUnedited(const std::string& name) {
+    return name == "v1.1.1 first-run file" || name == "no file" || name == "empty file";
 }
 
 std::vector<std::string> CanonicalDiagnostics(const std::string& bytes, finch_ht::Config& out) {
@@ -689,6 +818,16 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
     const cfg::ConfigTable<finch_ht::Config> table = finch_ht::config::Table();
     std::set<std::string> migrated_files;
     int compared = 0;
+    int touched = 0;
+    int modeTouched = 0;
+
+    finch_ht::Config skewedConfig;
+    const std::vector<std::string> skewedDiagnostics = CanonicalDiagnostics(kSkewedDefaults, skewedConfig);
+    for (const std::string& d : skewedDiagnostics) std::printf("  the skewed Defaults.ini: %s\n", d.c_str());
+    Check(skewedDiagnostics.empty(), "the skewed Defaults.ini sets every row with no diagnostic");
+    const Observed skewedObserved = ObserveCanonical(skewedConfig);
+    Check(RowsThatDiffer(skewedObserved, ObserveCanonical(table.defaults())) == AllRows(),
+          "the skewed Defaults.ini differs from the built-in values on every row that follows Defaults.ini");
     for (const Input& input : inputs) {
         const std::string& name = input.name;
 
@@ -725,6 +864,18 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
         }
         const Observed& want = allowed.observed;
 
+        const std::set<Concept> follows(imported.follows_defaults_ini.begin(), imported.follows_defaults_ini.end());
+        Check(follows.size() == imported.follows_defaults_ini.size(), name + ": follows_defaults_ini names each row once");
+        const std::set<Concept> untouched = UntouchedRows(read);
+        if (follows != untouched) {
+            std::printf("  %s: follows Defaults.ini %s, untouched %s\n", name.c_str(), Names(follows).c_str(),
+                        Names(untouched).c_str());
+        }
+        Check(follows == untouched, name + ": the rows left to Defaults.ini are exactly the ones the player never changed");
+        if (untouched != AllRows()) ++touched;
+        if (!untouched.count(Concept::RotationEnabled)) ++modeTouched;
+        if (IsUnedited(name)) Check(untouched == AllRows(), name + ": every row follows Defaults.ini");
+
         // Over a Defaults.ini the owner creates with the built-in values.
         Scratch s;
         if (input.present) s.Write(input.bytes);
@@ -740,9 +891,10 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
             Check(Differences(ObserveCanonical(reread), ObserveCanonical(*migrated)).empty(),
                   name + ": CameraUnlock.ini reads back as the settings the session runs on");
 
-            // Fresh equals upgrade: the published build's first-run file, and no
-            // file at all, both end as the committed file.
-            if (name == "v1.1.1 first-run file" || name == "no file") {
+            // Fresh equals upgrade: the published build's first-run file, an
+            // empty file and no file at all end as the committed file, `default`
+            // on every row.
+            if (IsUnedited(name)) {
                 Check(ReadFileBytes(s.canonical().string()) == committed,
                       name + ": gives the committed file byte for byte");
             }
@@ -760,9 +912,10 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
                   name + ": HeadTracking.ini keeps its read-only attribute");
         }
 
-        // Over a Defaults.ini that differs everywhere. With no legacy file the
-        // settings are Defaults.ini's own, so only an input with a file is held
-        // to the import there.
+        // Over a Defaults.ini that differs everywhere: a row the player never
+        // changed is `default` and takes Defaults.ini's value, and a changed row
+        // keeps the player's. With no legacy file every row is Defaults.ini's,
+        // which config_tests covers.
         if (input.present) {
             Scratch skewed;
             skewed.Write(input.bytes);
@@ -770,14 +923,26 @@ void ImportAgainstMigration(const std::vector<Input>& inputs) {
             const std::optional<finch_ht::Config> c =
                 Migrate(input, skewed, name + " (skewed Defaults.ini)", migrated_files);
             const std::vector<std::string> diff =
-                c ? Differences(want, ObserveCanonical(*c)) : std::vector<std::string>{"the load"};
+                c ? Differences(OverDefaults(want, follows, skewedObserved), ObserveCanonical(*c))
+                  : std::vector<std::string>{"the load"};
             for (const std::string& d : diff) std::printf("  comparison 2, %s (skewed Defaults.ini): %s\n", name.c_str(), d.c_str());
-            Check(diff.empty(), "comparison 2: the migration gives the import's settings over a Defaults.ini that "
-                                "differs everywhere: " + name);
+            Check(diff.empty(), "comparison 2: over a Defaults.ini that differs everywhere, the untouched rows take its "
+                                "values and the changed rows keep the import's: " + name);
+            if (c) {
+                const std::string bytes = ReadFileBytes(skewed.canonical().string());
+                for (const Concept row : follows) {
+                    const std::string key = cfg::schema::kConcepts[static_cast<std::size_t>(row)].key;
+                    Check(bytes.find("\r\n" + key + "=default\r\n") != std::string::npos,
+                          name + " (skewed Defaults.ini): " + key + " is written default");
+                }
+            }
         }
         ++compared;
     }
     std::printf("comparison 2: %d inputs\n", compared);
+    std::printf("%d inputs changed a row from v1.1.1's default, %d of them the tracking mode\n", touched, modeTouched);
+    Check(touched > 0 && modeTouched > 0,
+          "the inputs change rows, the tracking mode among them, which then do not follow Defaults.ini");
 
     // Core's canonical config lint runs over these next (lint-migrated.mjs).
     const fs::path lint = MigratedFolder();
