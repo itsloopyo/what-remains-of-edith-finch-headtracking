@@ -53,18 +53,6 @@ if ($Version -eq 'nightly') {
 
 Import-Module (Join-Path $ProjectRoot 'cameraunlock-core/powershell/ReleaseWorkflow.psm1') -Force
 
-# Mirrors New-ChangelogFromCommits' insertion so a -Force maintenance entry
-# lands in the same place with the same shape.
-function Add-MaintenanceChangelogEntry {
-    param([string]$Path, [string]$NewVersion)
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    $entry = "## [$NewVersion] - $date`n`n### Changed`n`n- Maintenance release (no user-facing changes).`n`n"
-    $changelog = Get-Content $Path -Raw
-    $changelog = $changelog -replace '(?s)(# Changelog.*?\n\n)', "`$1$entry"
-    $changelog = $changelog.TrimEnd() + "`n"
-    Set-Content $Path $changelog -NoNewline
-}
-
 function Write-NoBom {
     param([string]$Path, [string]$Text)
     [System.IO.File]::WriteAllText($Path, $Text, (New-Object System.Text.UTF8Encoding $false))
@@ -82,7 +70,7 @@ $current = $Matches[1]
 try {
     $target = Resolve-ReleaseVersion -Argument $Version -CurrentVersion $current
 } catch {
-    Write-Error $_.Exception.Message
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 Assert-ReleaseNotBelowCanonicalSince -RepoRoot $ProjectRoot -Version $target
@@ -116,28 +104,13 @@ Write-Host "Releasing $current -> $target" -ForegroundColor Cyan
 # instead of a half-applied version bump with no tag.
 $changelogPath = Join-Path $ProjectRoot 'CHANGELOG.md'
 Write-Host 'Generating CHANGELOG from commits...' -ForegroundColor Cyan
-# Version tags only. `release nightly` moves the rolling `dev` tag to the tip
-# on every publish, so an unfiltered listing reports "already released" on a
-# repo that has only ever shipped dev builds, and the generator below then
-# diffs an empty `dev..HEAD`.
-$hasTags = git -C $ProjectRoot tag -l 'v[0-9]*' 2>$null
-if (-not $hasTags) {
-    if (-not (Test-Path $changelogPath)) {
-        $date = Get-Date -Format 'yyyy-MM-dd'
-        Write-NoBom -Path $changelogPath -Text "# Changelog`n`n## [$target] - $date`n`nFirst release.`n"
-    }
-} else {
-    try {
-        New-ChangelogFromCommits -ChangelogPath $changelogPath -Version $target -ArtifactPaths @('src/', 'cameraunlock-core', 'scripts/') | Out-Null
-    } catch {
-        if (-not $Force) {
-            Write-Error $_.Exception.Message
-            Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
-            exit 1
-        }
-        Write-Host 'No user-facing commits since last tag - writing maintenance entry (-Force).' -ForegroundColor Yellow
-        Add-MaintenanceChangelogEntry -Path $changelogPath -NewVersion $target
-    }
+try {
+    New-ChangelogFromCommits -ChangelogPath $changelogPath -Version $target -ArtifactPaths @('src/', 'cameraunlock-core', 'scripts/') -Maintenance:$Force | Out-Null
+} catch {
+    if ($Force) { throw }
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
+    exit 1
 }
 
 # --- 4. Bump the canonical version (CMakeLists.txt) + its mirrors ------
