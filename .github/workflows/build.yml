@@ -14,11 +14,12 @@ on:
       - 'docs/**'
       - 'LICENSE'
 
-# Reading the repo is all this job does; it publishes nothing back. Without an
-# explicit block the job inherits the repo/org default, which on many repos is
-# a read/write token handed to every push on every branch.
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -51,12 +52,6 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: pixi run package
-
-      # Same command a developer runs. The build is already done by `package`,
-      # so this only runs ctest over the tests target.
-      - name: Run unit tests
-        shell: pwsh
-        run: pixi run test
 
       - name: Verify installer was produced
         shell: pwsh

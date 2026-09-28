@@ -93,3 +93,4 @@ add_test(NAME finch_config_lint COMMAND node
     ${CMAKE_SOURCE_DIR}/tests/config_differential/lint-migrated.mjs
     $<TARGET_FILE_DIR:finch_config_differential_tests>/migrated)
 set_tests_properties(finch_config_lint PROPERTIES DEPENDS finch_config_differential_tests)
+set_tests_properties(finch_config_differential_tests finch_config_lint PROPERTIES LABELS differential)
