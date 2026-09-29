@@ -17,7 +17,7 @@ below; it ships in neither release ZIP.
 | injector | `f7fd18f` (inside Ultimate ASI Loader v9.7.2) | zlib | Compiled into the vendored dinput8.dll |
 | miniz | 3.0.0 (inside Ultimate ASI Loader v9.7.2) | MIT | Compiled into the vendored dinput8.dll |
 | MinHook | v1.3.3 (`9fbd087`) | BSD-2-Clause | Compiled into `EdithFinchHeadTracking.asi` |
-| cameraunlock-core | `a03c242` | MIT | Compiled into `EdithFinchHeadTracking.asi` |
+| cameraunlock-core | `88a20e7` | MIT | Compiled into `EdithFinchHeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -257,7 +257,7 @@ the one on this repository's `LICENSE`, so its notice is reproduced here in
 full and travels with every binary we publish.
 
 - Upstream: https://github.com/itsloopyo/cameraunlock-core
-- Pinned commit: `a03c24290fae3a9c61f67adcb7c5ba4eedf69f20`
+- Pinned commit: `88a20e7789fb5ad907ae06136bc01184edbf4b21`
 
 ```
 MIT License
