@@ -32,6 +32,11 @@ namespace finch_ht
         // asked for (published by the hook purely so the log can report it).
         std::atomic<float> fovOffset{0.0f};
         std::atomic<float> gameFov{0.0f};
+        // SetMode resets the position interpolator and smoothing, which Update
+        // is reading on the game thread, so the hotkey only records the mode it
+        // wants and the hook applies it before its next Update.
+        std::atomic<cameraunlock::TrackingMode> desiredTrackingMode{
+            cameraunlock::TrackingMode::RotationAndPosition};
     };
 
     inline RuntimeState& Runtime()

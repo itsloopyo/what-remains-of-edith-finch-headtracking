@@ -40,11 +40,13 @@ namespace finch_ht
             Log::Line("hotkey: tracking %s", enabled ? "ON" : "OFF");
         }
 
-        // The session's mode is an atomic the hook reads each frame, so the
-        // cycle applies it here and then saves it.
-        void CycleTrackingMode(Session& session)
+        // Steps from the mode the hook last applied, not from one still waiting
+        // to be applied, so two presses inside one frame move one step.
+        void CycleTrackingMode(const Session& session)
         {
-            const TrackingMode mode = session.CycleMode();
+            const TrackingMode mode =
+                static_cast<TrackingMode>((static_cast<int>(session.GetMode()) + 1) % 3);
+            Runtime().desiredTrackingMode.store(mode);
             const char* name = "normal (rotation + position)";
             switch (mode) {
                 case TrackingMode::RotationOnly: name = "rotation only (position off)"; break;

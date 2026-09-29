@@ -59,10 +59,10 @@ FrameClock g_frameClock;
 CallerCensus g_callerCensus;
 
 // Holds the release ease between frames, so it belongs beside the session
-// rather than inside the per-frame helper. Reset() is not wired to anything
-// yet: a chapter change cuts the camera, and carrying one room's wall into the
-// next one only costs the release time constant, which is cheaper than getting
-// the cut detection wrong.
+// rather than inside the per-frame helper. Reset on every render-path frame
+// that applies no lean. A chapter change is not detected: it cuts the camera,
+// and carrying one room's wall into the next one only costs the release time
+// constant, which is cheaper than getting the cut detection wrong.
 cameraunlock::camera::LeanClamp g_leanClamp;
 
 // ---- the hook ------------------------------------------------------------
@@ -202,8 +202,10 @@ bool SuppressedForPinnedView(float cleanPitch) {
 ue::FVector ApplyPositionOffset(const ue::FQuat4d& baseQuat, FVector4f* outLocation,
                                 void* controller, float deltaTime) {
     float offsetX = 0.0f, offsetY = 0.0f, offsetZ = 0.0f;
-    if (!g_session->GetPositionOffset(offsetX, offsetY, offsetZ))
+    if (!g_session->GetPositionOffset(offsetX, offsetY, offsetZ)) {
+        g_leanClamp.Reset();
         return ue::FVector{0.0, 0.0, 0.0};
+    }
 
     ue::FVector offset = PositionOffsetUE(baseQuat, offsetX, offsetY, offsetZ);
 
@@ -269,27 +271,37 @@ void __fastcall GetPlayerViewPoint_Hook(void* self, FVector4f* outLocation, FRot
 
     LogHeartbeat(call, retRva, mode);
 
-    if (!Runtime().trackingEnabled.load(std::memory_order_relaxed) || !g_session || !inGameplay)
-        return;
-
     // Decoupling: only the render-path caller(s) get the head pose written back.
     // Every other GetPlayerViewPoint caller (interaction traces, audio listener,
     // AI perception, replication) keeps the clean mouse/pad rotation.
     if (!ShouldInjectForCaller(retRva, mode, Offsets().kKnownCallerRvas))
         return;
 
-    const float frameDelta = g_frameClock.Tick();
-    if (!g_session->Update(frameDelta))
-        return;
+    // Ahead of the tracking gates, so a mode picked while tracking is off is in
+    // place when it comes back on.
+    const TrackingMode desiredMode = Runtime().desiredTrackingMode.load();
+    if (g_session->GetMode() != desiredMode)
+        g_session->SetMode(desiredMode);
 
-    HeadPose pose{};
-    if (!g_session->GetRotation(pose.yaw, pose.pitch, pose.roll))
+    if (!Runtime().trackingEnabled.load(std::memory_order_relaxed) || !inGameplay) {
+        g_leanClamp.Reset();
         return;
+    }
+
+    const float frameDelta = g_frameClock.Tick();
+    HeadPose pose{};
+    if (!g_session->Update(frameDelta)
+        || !g_session->GetRotation(pose.yaw, pose.pitch, pose.roll)) {
+        g_leanClamp.Reset();
+        return;
+    }
 
     // Checked after the session update so smoothing keeps running while
     // suppressed - the pose is already current when the gate releases.
-    if (SuppressedForPinnedView(cleanRotation.Pitch))
+    if (SuppressedForPinnedView(cleanRotation.Pitch)) {
+        g_leanClamp.Reset();
         return;
+    }
 
     const ue::FQuat4d baseQuat = ViewQuat(cleanRotation);
     *outRotation = ComposeTrackedRotation(cleanRotation, baseQuat, pose.yaw, pose.pitch, pose.roll,
@@ -337,7 +349,9 @@ void ApplyConfigToSession() {
         lean_trace::SetChannel(g_config.collision_channel);
     }
 
-    g_session->SetMode(config::StartupTrackingMode(g_config));
+    const TrackingMode startupMode = config::StartupTrackingMode(g_config);
+    g_session->SetMode(startupMode);
+    Runtime().desiredTrackingMode.store(startupMode);
 }
 
 void LoadAndLogConfig() {

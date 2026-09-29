@@ -31,6 +31,11 @@
 - The sensitivity and axis inversion settings (`[Rotation] YawSensitivity`, `PitchSensitivity`, `RollSensitivity`, `InvertYaw`, `InvertPitch`, `InvertRoll`, `[Position] SensitivityX`, `SensitivityY`, `SensitivityZ`). Set these in your tracker app instead.
 - With these settings at their shipped defaults the camera moves as it did before.
 
+### Fixed
+
+- Switching tracking mode with Page Up / Ctrl+Shift+G no longer resets the lean's smoothing while the game is part way through a frame. The new mode now takes effect at the start of the next frame.
+- A wall that held your lean back no longer carries over once the lean stops, for example after turning tracking off with End, switching to rotation only, or looking straight down during the comic and cannery sequences. Before this fix the lean eased back out from where the wall had stopped it when it resumed.
+
 ## [1.1.1] - 2026-09-03
 
 ### Added
