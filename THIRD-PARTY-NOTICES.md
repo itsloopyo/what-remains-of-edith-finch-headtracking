@@ -328,14 +328,10 @@ game code, no extracted game assets and no proprietary DLLs, and it requires a
 legitimately purchased copy of the game. The gameplay clip described above is
 the sole exception and ships in neither release ZIP.
 
-The engine structure offsets, function addresses and PE-header fingerprints
-recorded in `src/builds/` were measured by the authors through independent
-analysis of a legitimately owned copy, for the sole purpose of interoperating
-with it. They are factual numbers. No decompiled or disassembled game code is
-stored in this repository, and no run of game instruction bytes is either: the
-one place the mod has to recognise a function body, it pins a one-way hash of
-those bytes rather than the bytes themselves.
-
+Engine layout measurements, short instruction recognisers and metadata names
+identify the camera and collision interfaces in the user's installed game.
+These are used for interoperability. The mod includes no complete game-function
+bodies, decompiled implementations or proprietary libraries.
 The mod does not circumvent, weaken or interfere with any technical protection
 measure. `src/steamstub.cpp` waits for the game's own Steam DRM stub to finish
 its work before installing a hook, and does no decryption, unpacking or key

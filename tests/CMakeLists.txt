@@ -94,3 +94,11 @@ add_test(NAME finch_config_lint COMMAND node
     $<TARGET_FILE_DIR:finch_config_differential_tests>/migrated)
 set_tests_properties(finch_config_lint PROPERTIES DEPENDS finch_config_differential_tests)
 set_tests_properties(finch_config_differential_tests finch_config_lint PROPERTIES LABELS differential)
+
+add_executable(finch_discovery_tests runtime_discovery_tests.cpp
+    ${CMAKE_SOURCE_DIR}/src/builds/runtime_discovery.cpp
+    ${CMAKE_SOURCE_DIR}/src/builds/build_registry.cpp
+    ${CMAKE_SOURCE_DIR}/src/builds/steam_offsets.cpp)
+target_include_directories(finch_discovery_tests PRIVATE ${CMAKE_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/cameraunlock-core/cpp/include)
+target_link_libraries(finch_discovery_tests PRIVATE cameraunlock)
+add_test(NAME finch_discovery_tests COMMAND finch_discovery_tests)

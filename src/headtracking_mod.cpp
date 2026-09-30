@@ -10,6 +10,7 @@
 #include <intrin.h>
 
 #include "builds/build_registry.h"
+#include "builds/runtime_discovery.h"
 #include "caller_trace.h"
 #include "config.h"
 #include "exe_paths.h"
@@ -253,6 +254,7 @@ void __fastcall GetPlayerViewPoint_Hook(void* self, FVector4f* outLocation, FRot
     const bool inGameplay = InGameplay(reinterpret_cast<std::uintptr_t>(self));
 
     g_origGetPlayerViewPoint(self, outLocation, outRotation);
+    if (!builds::ValidateController(reinterpret_cast<std::uintptr_t>(self))) return;
     const FRotator4f cleanRotation = *outRotation;
     const FVector4f  cleanLocation = *outLocation;
 
@@ -371,30 +373,11 @@ void LoadAndLogConfig() {
         g_config.fov_offset, g_config.collision_enabled ? 1 : 0);
 }
 
-// False = this build is not one the mod knows how to touch. The caller must
-// then install nothing at all, leaving the game vanilla.
 bool SelectBuildProfile(HMODULE host) {
-    const auto match = builds::SelectProfile(host);
-    switch (match) {
-        case builds::MatchResult::Matched:
-            return true;
-        case builds::MatchResult::HostNewer:
-            Log::Line("build-check: this game build is NEWER than any profile this "
-                      "mod knows about - check the releases page for an update. "
-                      "Staying dormant; game runs vanilla.");
-            return false;
-        case builds::MatchResult::HostOlder:
-            Log::Line("build-check: this game build is OLDER than the profile - let "
-                      "Steam finish updating. Staying dormant; game runs vanilla.");
-            return false;
-        default:
-            Log::Line("build-check: no matching/complete profile - staying dormant; "
-                      "game runs vanilla.");
-            return false;
-    }
+    if (builds::SelectProfile(host) == builds::MatchResult::Matched) return true;
+    Log::Line("build-check: camera discovery or executable validation failed; staying dormant");
+    return false;
 }
-
-// Publishes the module range that every RVA in this mod is relative to.
 bool PublishModuleRange(HMODULE host) {
     MODULEINFO info{};
     if (!GetModuleInformation(GetCurrentProcess(), host, &info, sizeof(info))) {

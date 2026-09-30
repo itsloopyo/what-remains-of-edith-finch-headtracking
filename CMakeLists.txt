@@ -61,6 +61,8 @@ set(MOD_SOURCES
     src/lean_trace.cpp
     src/legacy_config/legacy_config.cpp
     src/steamstub.cpp
+    src/builds/runtime_discovery.cpp
+    src/builds/runtime_layout.cpp
     src/builds/build_registry.cpp
     src/builds/steam_offsets.cpp
 )

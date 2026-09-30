@@ -246,7 +246,7 @@ FovOffset=0.0
 
 - Confirm `winmm.dll` and `EdithFinchHeadTracking.asi` are both in `<game>\FinchGame\Binaries\Win64\`.
 - Check `HeadTracking.log` in that folder. No log file at all means the ASI loader is not being loaded. The log is rewritten on every launch and the launch before it is kept as `HeadTracking.prev.log`, so if the game crashed and you relaunched before fetching it, send the `.prev.log` too.
-- "Staying dormant" in the log means the game build did not match a known profile. File an issue with the log attached.
+- "Staying dormant" means the mod could not establish the camera interfaces for this build. The log also reports live layout validation before camera changes or collision queries are enabled. File an issue with the log attached if validation does not complete.
 
 **No tracking response**
 

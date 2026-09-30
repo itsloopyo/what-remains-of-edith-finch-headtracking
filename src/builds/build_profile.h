@@ -5,15 +5,6 @@
 
 #include <cameraunlock/memory/pe_fingerprint.h>
 
-// One BuildProfile describes a single shipped build of What Remains of Edith
-// Finch: the PE-header fingerprint that uniquely identifies it, plus every
-// per-build RVA / field offset the camera hook needs. The registry holds one
-// profile per supported build; at startup the mod fingerprints the live module
-// and selects the matching profile. No match leaves the mod fully dormant (no
-// hooks installed, game runs vanilla) - see AGENTS.md "Maintain compatibility
-// across new patches": never edit an existing profile's RVAs in place, ADD a
-// new one.
-//
 // Edith Finch is UE 4.x (2017 build). UE4 predates Large World Coordinates, so
 // FVector / FRotator are 3-float structs (12 bytes each), NOT the 3-double
 // FVector3d / FRotator3d of UE5. The hook reads/writes the GetPlayerViewPoint
