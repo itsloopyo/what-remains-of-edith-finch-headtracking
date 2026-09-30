@@ -27,6 +27,7 @@
 #include "cameraunlock/config/defaults_file.h"
 #include "cameraunlock/diagnostics/crash_handler.h"
 #include "cameraunlock/hooks/hook_manager.h"
+#include "cameraunlock/os/game_window.h"
 #include "cameraunlock/os/module_paths.h"
 #include "cameraunlock/time/frame_clock.h"
 #include "cameraunlock/unreal/ue_runtime.h"
@@ -278,6 +279,10 @@ void __fastcall GetPlayerViewPoint_Hook(void* self, FVector4f* outLocation, FRot
     // AI perception, replication) keeps the clean mouse/pad rotation.
     if (!ShouldInjectForCaller(retRva, mode, Offsets().kKnownCallerRvas))
         return;
+
+    cameraunlock::os::CenterGameWindowOnce([](cameraunlock::os::WindowLogLevel, const char* message) {
+        Log::Line("%s", message);
+    });
 
     // Ahead of the tracking gates, so a mode picked while tracking is off is in
     // place when it comes back on.
